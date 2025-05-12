@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OpenWhoop.MauiApp.MainPage">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="10" Padding="10">
+            <Button Text="Scan for Whoop Devices" Clicked="OnScanClicked" />
+
+            <Label Text="Discovered Devices:" FontAttributes="Bold" />
+            <ListView ItemsSource="{Binding Devices}"
+                      SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" 
+                      ItemSelected="OnDeviceSelected"
+                      HeightRequest="200">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <ViewCell>
+                            <StackLayout Padding="5">
+                                <Label Text="{Binding Name}" FontAttributes="Bold" />
+                                <Label Text="{Binding Id, StringFormat='ID: {0}'}" FontSize="Small" />
+                                <Label Text="{Binding Rssi, StringFormat='RSSI: {0}'}" FontSize="Small" />
+                            </StackLayout>
+                        </ViewCell>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <Label Text="Console Output:" FontAttributes="Bold" Margin="0,10,0,0"/>
+            <Editor Text="{Binding ConsoleOutput}" IsReadOnly="True" HeightRequest="200" AutoSize="Disabled" />
+
+            <!-- Add other buttons here for interacting with the connected device -->
+            <!-- e.g., <Button Text="Sync History" Clicked="OnSyncHistoryClicked" IsEnabled="{Binding IsDeviceConnectedAndInitialized}" /> -->
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>
