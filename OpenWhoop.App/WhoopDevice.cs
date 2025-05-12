@@ -20,22 +20,21 @@ public class WhoopDevice : IDisposable
     private readonly IAdapter _adapter;
 
     private IService _whoopService;
-    private ICharacteristic _cmdToStrapCharacteristic;    // Write commands to this (formerly _rxCharacteristic)
-    private ICharacteristic _dataFromStrapCharacteristic; // General data, historical (formerly _txCharacteristic)
-    private ICharacteristic _cmdFromStrapCharacteristic;  // Command responses
-    private ICharacteristic _eventsFromStrapCharacteristic; // Specific device events (formerly _sensorCharacteristic)
-                                                            // private ICharacteristic _memfaultCharacteristic; // If needed later
+    private ICharacteristic _cmdToStrapCharacteristic;
+    private ICharacteristic _dataFromStrapCharacteristic;
+    private ICharacteristic _cmdFromStrapCharacteristic;
+    private ICharacteristic _eventsFromStrapCharacteristic;
 
     public event EventHandler<byte[]> DataFromStrapReceived;
     public event EventHandler<byte[]> CmdFromStrapReceived;
     public event EventHandler<byte[]> EventsFromStrapReceived;
-    // public event EventHandler<byte[]> MemfaultDataReceived; // If needed
     public event EventHandler Disconnected;
-
 
     public string Name => _peripheral.Name;
     public Guid Id => _peripheral.Id;
     public DeviceState State => _peripheral.State;
+    public DeviceBondState BondState => _peripheral.BondState;
+
 
     public WhoopDevice(IDevice peripheral, AppDbContext dbContext)
     {
@@ -43,13 +42,33 @@ public class WhoopDevice : IDisposable
         _dbContext = dbContext;
         _adapter = CrossBluetoothLE.Current.Adapter;
 
+        Console.WriteLine($"[WhoopDevice] Attaching DeviceDisconnected and DeviceConnectionLost handlers for {Name}");
         _adapter.DeviceDisconnected += OnDeviceDisconnectedHandler;
         _adapter.DeviceConnectionLost += OnDeviceConnectionLostHandler;
     }
 
+    private void OnDeviceDisconnectedHandler(object sender, DeviceEventArgs e)
+    {
+        if (e.Device.Id == _peripheral.Id)
+        {
+            Console.WriteLine($"[WhoopDevice] Device {Name} disconnected.");
+            CleanupCharacteristicsAndSubscriptions();
+            Disconnected?.Invoke(this, EventArgs.Empty);
+        }
+    }
+    private void OnDeviceConnectionLostHandler(object sender, DeviceErrorEventArgs e)
+    {
+        if (e.Device.Id == _peripheral.Id)
+        {
+            Console.WriteLine($"[WhoopDevice] Connection lost to device {Name}. Error: {e.ErrorMessage}");
+            CleanupCharacteristicsAndSubscriptions();
+            Disconnected?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     public async Task<bool> ConnectAndBondAsync(CancellationToken cancellationToken = default)
     {
-        if (State == DeviceState.Connected && _peripheral.BondState == DeviceBondState.Bonded) 
+        if (State == DeviceState.Connected && _peripheral.BondState == DeviceBondState.Bonded)
         {
             Console.WriteLine($"[WhoopDevice] {Name} is already connected and bonded.");
             return true;
@@ -84,7 +103,6 @@ public class WhoopDevice : IDisposable
             }
         }
 
-        // Attempt to create a bond
         if (_peripheral.BondState != DeviceBondState.Bonded)
         {
             Console.WriteLine($"[WhoopDevice] Attempting to create bond with {Name}...");
@@ -92,7 +110,7 @@ public class WhoopDevice : IDisposable
             {
                 await _adapter.BondAsync(_peripheral);
                 
-                await Task.Delay(1000, cancellationToken); // Adjust delay as needed
+                await Task.Delay(1000, cancellationToken); // Give time for bond state to update
 
                 if (_peripheral.BondState == DeviceBondState.Bonded)
                 {
@@ -101,140 +119,84 @@ public class WhoopDevice : IDisposable
                 else
                 {
                     Console.WriteLine($"[WhoopDevice] Failed to bond with {Name}, or bond attempt timed out. BondState: {_peripheral.BondState}. Continuing without guaranteed bond.");
-                    // Depending on the device, not being bonded might prevent further operations.
-                    // You might choose to return false here if bonding is strictly required.
                 }
             }
-            catch (DeviceConnectionException ex) // Catching specific exception for bonding
+            catch (DeviceConnectionException ex)
             {
                 Console.WriteLine($"[WhoopDevice] Error creating bond with {Name}: {ex.Message}. BondState: {_peripheral.BondState}");
-                // return false; // Optionally fail if bonding fails
             }
             catch (OperationCanceledException)
             {
                 Console.WriteLine($"[WhoopDevice] Bonding attempt with {Name} cancelled.");
-                // return false;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[WhoopDevice] An unexpected error occurred during bonding with {Name}: {ex.Message}. BondState: {_peripheral.BondState}");
-                // return false; // Optionally fail if bonding fails
             }
         }
         else
         {
             Console.WriteLine($"[WhoopDevice] {Name} is already bonded. BondState: {_peripheral.BondState}");
         }
-        return true; // Returns true if connected, bonding result is logged
-    }
-
-    private void OnDeviceDisconnectedHandler(object sender, DeviceEventArgs e)
-    {
-        if (e.Device.Id == _peripheral.Id)
-        {
-            Console.WriteLine($"Device {Name} disconnected.");
-            CleanupCharacteristicsAndSubscriptions();
-            Disconnected?.Invoke(this, EventArgs.Empty);
-        }
-    }
-    private void OnDeviceConnectionLostHandler(object sender, DeviceErrorEventArgs e)
-    {
-        if (e.Device.Id == _peripheral.Id)
-        {
-            Console.WriteLine($"Connection lost to device {Name}. Error: {e.ErrorMessage}");
-            CleanupCharacteristicsAndSubscriptions();
-            Disconnected?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    public async Task<bool> ConnectAsync(CancellationToken cancellationToken = default)
-    {
-        if (State == DeviceState.Connected)
-        {
-            Console.WriteLine($"{Name} is already connected.");
-            return true;
-        }
-
-        try
-        {
-            Console.WriteLine($"Connecting to {Name} (ID: {Id})...");
-            var connectParameters = new ConnectParameters(autoConnect: false, forceBleTransport: true);
-            await _adapter.ConnectToDeviceAsync(_peripheral, connectParameters, cancellationToken);
-            Console.WriteLine($"{Name} connected successfully.");
-            return true;
-        }
-        catch (DeviceConnectionException ex)
-        {
-            Console.WriteLine($"Error connecting to {Name}: {ex.Message}");
-        }
-        catch (OperationCanceledException)
-        {
-            Console.WriteLine($"Connection attempt to {Name} cancelled.");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"An unexpected error occurred while connecting to {Name}: {ex.Message}");
-        }
-        return false;
+        return State == DeviceState.Connected;
     }
 
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (State != DeviceState.Connected)
         {
-            Console.WriteLine($"{Name} is not connected. Cannot initialize.");
+            Console.WriteLine($"[WhoopDevice] {Name} is not connected. Cannot initialize.");
             return false;
+        }
+        if (_peripheral.BondState != DeviceBondState.Bonded)
+        {
+            Console.WriteLine($"[WhoopDevice] {Name} is not bonded. Certain characteristics might not be available or work correctly.");
+            // Depending on strictness, you might return false here.
         }
 
         try
         {
-            Console.WriteLine($"Initializing {Name}: Discovering services and characteristics...");
+            Console.WriteLine($"[WhoopDevice] Initializing {Name}: Discovering services and characteristics...");
             _whoopService = await _peripheral.GetServiceAsync(WhoopConstants.WhoopServiceGuid, cancellationToken);
             if (_whoopService == null)
             {
-                Console.WriteLine($"Whoop service ({WhoopConstants.WhoopServiceGuid}) not found on {Name}.");
+                Console.WriteLine($"[WhoopDevice] Whoop service ({WhoopConstants.WhoopServiceGuid}) not found on {Name}.");
                 return false;
             }
-            Console.WriteLine("Whoop service found.");
+            Console.WriteLine("[WhoopDevice] Whoop service found.");
 
             _cmdToStrapCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.CmdToStrapCharacteristicGuid);
             _dataFromStrapCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.DataFromStrapCharacteristicGuid);
             _cmdFromStrapCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.CmdFromStrapCharacteristicGuid);
             _eventsFromStrapCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.EventsFromStrapCharacteristicGuid);
-            // _memfaultCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.MemfaultCharacteristicGuid, cancellationToken);
-
 
             bool allFound = true;
-            if (_cmdToStrapCharacteristic == null) { Console.WriteLine("CMD_TO_STRAP characteristic not found."); allFound = false; }
-            if (_dataFromStrapCharacteristic == null) { Console.WriteLine("DATA_FROM_STRAP characteristic not found."); allFound = false; }
-            if (_cmdFromStrapCharacteristic == null) { Console.WriteLine("CMD_FROM_STRAP characteristic not found."); allFound = false; }
-            if (_eventsFromStrapCharacteristic == null) { Console.WriteLine("EVENTS_FROM_STRAP characteristic not found."); allFound = false; }
-            // if (_memfaultCharacteristic == null) { Console.WriteLine("MEMFAULT characteristic not found."); /* Optional? */ }
-
+            if (_cmdToStrapCharacteristic == null) { Console.WriteLine("[WhoopDevice] CMD_TO_STRAP characteristic not found."); allFound = false; }
+            if (_dataFromStrapCharacteristic == null) { Console.WriteLine("[WhoopDevice] DATA_FROM_STRAP characteristic not found."); allFound = false; }
+            if (_cmdFromStrapCharacteristic == null) { Console.WriteLine("[WhoopDevice] CMD_FROM_STRAP characteristic not found."); allFound = false; }
+            if (_eventsFromStrapCharacteristic == null) { Console.WriteLine("[WhoopDevice] EVENTS_FROM_STRAP characteristic not found."); allFound = false; }
 
             if (!allFound)
             {
-                Console.WriteLine("One or more required characteristics were not found.");
+                Console.WriteLine("[WhoopDevice] One or more required characteristics were not found.");
                 return false;
             }
-            Console.WriteLine("All required characteristics found.");
+            Console.WriteLine("[WhoopDevice] All required characteristics found.");
 
-            // Subscribe to notifications
             await SubscribeToCharacteristic(_dataFromStrapCharacteristic, OnDataFromStrapValueUpdated, "DATA_FROM_STRAP", cancellationToken);
             await SubscribeToCharacteristic(_cmdFromStrapCharacteristic, OnCmdFromStrapValueUpdated, "CMD_FROM_STRAP", cancellationToken);
             await SubscribeToCharacteristic(_eventsFromStrapCharacteristic, OnEventsFromStrapValueUpdated, "EVENTS_FROM_STRAP", cancellationToken);
-            // await SubscribeToCharacteristic(_memfaultCharacteristic, OnMemfaultValueUpdated, "MEMFAULT", cancellationToken);
 
-            Console.WriteLine($"{Name} initialized successfully.");
+            Console.WriteLine($"[WhoopDevice] {Name} initialized successfully.");
             return true;
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine($"Initialization of {Name} cancelled.");
+            Console.WriteLine($"[WhoopDevice] Initialization of {Name} cancelled.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error initializing {Name}: {ex.Message}");
+            Console.WriteLine($"[WhoopDevice] Error initializing {Name}: {ex.Message}");
         }
         return false;
     }
@@ -246,9 +208,9 @@ public class WhoopDevice : IDisposable
             Console.WriteLine($"[WhoopDevice] Attempting to subscribe to {name} (ID: {characteristic.Id}, CanUpdate: {characteristic.CanUpdate})");
             try
             {
-                characteristic.ValueUpdated += handler; // Attach our internal handler
+                characteristic.ValueUpdated += handler;
                 await characteristic.StartUpdatesAsync(cancellationToken);
-                Console.WriteLine($"[WhoopDevice] Successfully called StartUpdatesAsync for {name}.");
+                Console.WriteLine($"[WhoopDevice] Successfully called StartUpdatesAsync for {name}");
             }
             catch (Exception ex)
             {
@@ -267,20 +229,26 @@ public class WhoopDevice : IDisposable
 
     private async Task UnsubscribeFromCharacteristic(ICharacteristic characteristic, EventHandler<CharacteristicUpdatedEventArgs> handler, string name)
     {
-        if (characteristic != null)
+        if (characteristic != null )
         {
-            characteristic.ValueUpdated -= handler;
-            await characteristic.StopUpdatesAsync();
-            Console.WriteLine($"Unsubscribed from {name} characteristic notifications.");
+            try
+            {
+                characteristic.ValueUpdated -= handler;
+                await characteristic.StopUpdatesAsync();
+                Console.WriteLine($"[WhoopDevice] Unsubscribed from {name} characteristic notifications.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WhoopDevice] Error unsubscribing from {name}: {ex.Message}");
+            }
         }
     }
 
     private void OnDataFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
     {
         string message = $"[WhoopDevice INTERNAL RAW DATA_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
-        Console.WriteLine(message); // To MAUI app console
-        Debug.WriteLine(message);   // To Visual Studio Debug Output
-
+        Console.WriteLine(message);
+        Debug.WriteLine(message);
         DataFromStrapReceived?.Invoke(this, args.Characteristic.Value);
     }
 
@@ -289,7 +257,6 @@ public class WhoopDevice : IDisposable
         string message = $"[WhoopDevice INTERNAL RAW CMD_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
         Console.WriteLine(message);
         Debug.WriteLine(message);
-
         CmdFromStrapReceived?.Invoke(this, args.Characteristic.Value);
     }
 
@@ -298,7 +265,6 @@ public class WhoopDevice : IDisposable
         string message = $"[WhoopDevice INTERNAL RAW EVENTS_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
         Console.WriteLine(message);
         Debug.WriteLine(message);
-
         EventsFromStrapReceived?.Invoke(this, args.Characteristic.Value);
     }
 
@@ -306,33 +272,30 @@ public class WhoopDevice : IDisposable
     {
         if (State != DeviceState.Connected || _cmdToStrapCharacteristic == null)
         {
-            Console.WriteLine($"{Name} is not connected or CMD_TO_STRAP characteristic is not initialized.");
+            Console.WriteLine($"[WhoopDevice] {Name} is not connected or CMD_TO_STRAP characteristic is not initialized.");
             return false;
         }
-
         if (!_cmdToStrapCharacteristic.CanWrite)
         {
-            Console.WriteLine("CMD_TO_STRAP characteristic does not support writes.");
+            Console.WriteLine("[WhoopDevice] CMD_TO_STRAP characteristic does not support writes.");
             return false;
         }
-
         try
         {
-            // Console.WriteLine($"Sending command via CMD_TO_STRAP: {BitConverter.ToString(commandData)}");
             bool success = await _cmdToStrapCharacteristic.WriteAsync(commandData, cancellationToken) == 0;
             if (!success)
             {
-                Console.WriteLine("Failed to send command (WriteAsync returned false).");
+                Console.WriteLine("[WhoopDevice] Failed to send command (WriteAsync returned false).");
             }
             return success;
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine($"Sending command to {Name} cancelled.");
+            Console.WriteLine($"[WhoopDevice] Sending command to {Name} cancelled.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error sending command to {Name}: {ex.Message}");
+            Console.WriteLine($"[WhoopDevice] Error sending command to {Name}: {ex.Message}");
         }
         return false;
     }
@@ -341,45 +304,42 @@ public class WhoopDevice : IDisposable
     {
         if (State == DeviceState.Disconnected || State == DeviceState.Limited)
         {
-            Console.WriteLine($"{Name} is already disconnected or connection is limited.");
+            Console.WriteLine($"[WhoopDevice] {Name} is already disconnected or connection is limited.");
             return;
         }
         try
         {
-            Console.WriteLine($"Disconnecting from {Name}...");
+            Console.WriteLine($"[WhoopDevice] Disconnecting from {Name}...");
             await UnsubscribeFromCharacteristic(_dataFromStrapCharacteristic, OnDataFromStrapValueUpdated, "DATA_FROM_STRAP");
             await UnsubscribeFromCharacteristic(_cmdFromStrapCharacteristic, OnCmdFromStrapValueUpdated, "CMD_FROM_STRAP");
             await UnsubscribeFromCharacteristic(_eventsFromStrapCharacteristic, OnEventsFromStrapValueUpdated, "EVENTS_FROM_STRAP");
-            // await UnsubscribeFromCharacteristic(_memfaultCharacteristic, OnMemfaultValueUpdated, "MEMFAULT");
 
-
-            await _adapter.DisconnectDeviceAsync(_peripheral);
-            Console.WriteLine($"{Name} disconnected by request.");
+            if (_peripheral.State != DeviceState.Disconnected)
+            {
+                await _adapter.DisconnectDeviceAsync(_peripheral);
+            }
+            Console.WriteLine($"[WhoopDevice] {Name} disconnected by request.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error disconnecting from {Name}: {ex.Message}");
+            Console.WriteLine($"[WhoopDevice] Error disconnecting from {Name}: {ex.Message}");
         }
         finally
         {
-            // Ensure characteristics are nulled even if unsubscription fails
-            CleanupCharacteristicsAndSubscriptions(false); // Don't remove adapter event handlers here
+            CleanupCharacteristicsAndSubscriptions(false);
         }
     }
 
     private void CleanupCharacteristicsAndSubscriptions(bool removeAdapterHandlers = true)
     {
-        // Unsubscribe from characteristic events directly to avoid issues if StopUpdatesAsync failed or wasn't called
         if (_dataFromStrapCharacteristic != null) _dataFromStrapCharacteristic.ValueUpdated -= OnDataFromStrapValueUpdated;
         if (_cmdFromStrapCharacteristic != null) _cmdFromStrapCharacteristic.ValueUpdated -= OnCmdFromStrapValueUpdated;
         if (_eventsFromStrapCharacteristic != null) _eventsFromStrapCharacteristic.ValueUpdated -= OnEventsFromStrapValueUpdated;
-        // if (_memfaultCharacteristic != null) _memfaultCharacteristic.ValueUpdated -= OnMemfaultValueUpdated;
 
         _cmdToStrapCharacteristic = null;
         _dataFromStrapCharacteristic = null;
         _cmdFromStrapCharacteristic = null;
         _eventsFromStrapCharacteristic = null;
-        // _memfaultCharacteristic = null;
         _whoopService = null;
 
         if (removeAdapterHandlers)
@@ -391,22 +351,15 @@ public class WhoopDevice : IDisposable
 
     public void Dispose()
     {
-        Console.WriteLine($"Disposing WhoopDevice {Name}...");
-        // Unsubscribe from adapter events first
+        Console.WriteLine($"[WhoopDevice] Disposing WhoopDevice {Name}...");
         _adapter.DeviceDisconnected -= OnDeviceDisconnectedHandler;
         _adapter.DeviceConnectionLost -= OnDeviceConnectionLostHandler;
 
-        // Attempt to gracefully disconnect and unsubscribe from characteristics
         if (State == DeviceState.Connected)
         {
-            // Run synchronously for dispose, but with a timeout.
-            // Consider if this should be fully async and if Dispose can be async.
-            Task.Run(async () => await DisconnectAsync()).Wait(TimeSpan.FromSeconds(5));
+            Task.Run(async () => await DisconnectAsync()).Wait(TimeSpan.FromSeconds(2)); // Shorter timeout for dispose
         }
-
-        // Final cleanup of event subscriptions and characteristic references
-        CleanupCharacteristicsAndSubscriptions(false); // Adapter handlers already removed
-
-        Console.WriteLine($"WhoopDevice {Name} disposed.");
+        CleanupCharacteristicsAndSubscriptions(false);
+        Console.WriteLine($"[WhoopDevice] WhoopDevice {Name} disposed.");
     }
 }
