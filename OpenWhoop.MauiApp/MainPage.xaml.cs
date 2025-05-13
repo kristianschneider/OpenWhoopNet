@@ -12,15 +12,19 @@ using OpenWhoop.App; // For WhoopDevice, WhoopPacketBuilder, Enums
 using System.Linq;
 using System.Text;
 using OpenWhoop.App.Protocol;
+using OpenWhoop.Core.Entities;
+using Microsoft.Extensions.DependencyInjection;
+using OpenWhoop.App.Services;
 
 namespace OpenWhoop.MauiApp
 {
     public partial class MainPage : ContentPage
     {
-        private WhoopDeviceScanner _scanner;
-        public ObservableCollection<DiscoveredDeviceInfo> Devices => _scanner?.DiscoveredDevices;
+        private BluetoothService _btService;
+        public ObservableCollection<DiscoveredDeviceInfo> Devices => _btService?.DiscoveredDevices;
 
         private WhoopDevice _connectedWhoopDevice;
+        private DbService _dbService;
         private AppDbContext _dbContext;
         private bool _isHistoricalSyncActive = false;
         private DateTimeOffset _historicalSyncStartTime;
@@ -40,39 +44,18 @@ namespace OpenWhoop.MauiApp
             }
         }
 
-        public MainPage()
+        public MainPage(DbService dbService)
         {
             InitializeComponent();
-            _scanner = new WhoopDeviceScanner();
-            SetupDbContext();
+            _btService = new BluetoothService();
+            _dbService = dbService;
+            _dbContext = _dbService.Context;
             BindingContext = this;
             this.Disappearing += OnMainPageDisappearing;
             UpdateCommandButtonsState(false); // Initially disable all command buttons
             StatusLabel.Text = "Status: Ready. Scan for devices.";
         }
 
-        private void SetupDbContext()
-        {
-            string dbFileName = "openwhoop_maui.db";
-            string dbPath = Path.Combine(FileSystem.AppDataDirectory, dbFileName);
-            LogToConsole($"Database path: {dbPath}");
-
-            var dbContextOptions = new DbContextOptionsBuilder<AppDbContext>()
-                .UseSqlite($"Data Source={dbPath}")
-                .Options;
-            _dbContext = new AppDbContext(dbContextOptions);
-
-            try
-            {
-                _dbContext.Database.Migrate();
-                LogToConsole("Database migrations applied successfully.");
-            }
-            catch (Exception ex)
-            {
-                LogToConsole($"Error applying migrations: {ex.Message}");
-                DisplayAlert("Database Error", $"Could not apply migrations: {ex.Message}", "OK");
-            }
-        }
         private async void OnScanClicked(object sender, EventArgs e)
         {
             LogToConsole("Scan button clicked.");
@@ -88,16 +71,16 @@ namespace OpenWhoop.MauiApp
             }
             LogToConsole("Permissions granted.");
 
-            if (_scanner.DiscoveredDevices.Any()) _scanner.DiscoveredDevices.Clear();
+            if (_btService.DiscoveredDevices.Any()) _btService.DiscoveredDevices.Clear();
             if (sender is Button scanButton) scanButton.IsEnabled = false;
 
             LogToConsole("Starting BLE scan...");
-            await _scanner.StartScanAsync(TimeSpan.FromSeconds(10));
+            await _btService.StartScanAsync(TimeSpan.FromSeconds(10));
             LogToConsole("Scan finished or timed out.");
-            StatusLabel.Text = _scanner.DiscoveredDevices.Any() ? "Status: Scan complete. Select device." : "Status: No devices found.";
+            StatusLabel.Text = _btService.DiscoveredDevices.Any() ? "Status: Scan complete. Select device." : "Status: No devices found.";
 
             if (sender is Button scanButtonAfterScan) scanButtonAfterScan.IsEnabled = true;
-            if (!_scanner.DiscoveredDevices.Any()) LogToConsole("No devices found.");
+            if (!_btService.DiscoveredDevices.Any()) LogToConsole("No devices found.");
         }
         private async void OnDeviceSelected(object sender, SelectedItemChangedEventArgs e)
         {
@@ -105,7 +88,7 @@ namespace OpenWhoop.MauiApp
             {
                 LogToConsole($"Device selected: {selectedUiDevice.Name}");
                 StatusLabel.Text = $"Status: Connecting to {selectedUiDevice.Name}...";
-                await _scanner.StopScanAsync();
+                await _btService.StopScanAsync();
                 IDevice bleDevice = selectedUiDevice.Device;
 
                 if (_connectedWhoopDevice != null && _connectedWhoopDevice.Id == bleDevice.Id && _connectedWhoopDevice.State == Plugin.BLE.Abstractions.DeviceState.Connected)
@@ -137,6 +120,35 @@ namespace OpenWhoop.MauiApp
                     if (initialized)
                     {
                         LogToConsole($"{bleDevice.Name} initialized successfully. Ready for commands.");
+                        // Save connected device setting to database
+                        try
+                        {
+                            var existingSetting = await _dbContext.StoredDeviceSettings
+                                .FirstOrDefaultAsync(s => s.DeviceId == bleDevice.Id.ToString());
+                            if (existingSetting == null)
+                            {
+                                existingSetting = new StoredDeviceSetting
+                                {
+                                    DeviceId = bleDevice.Id.ToString(),
+                                    DeviceName = bleDevice.Name,
+                                    LastConnectedUtc = DateTime.UtcNow
+                                };
+                                _dbContext.StoredDeviceSettings.Add(existingSetting);
+                            }
+                            else
+                            {
+                                existingSetting.DeviceName = bleDevice.Name;
+                                existingSetting.LastConnectedUtc = DateTime.UtcNow;
+                                _dbContext.StoredDeviceSettings.Update(existingSetting);
+                            }
+                            await _dbContext.SaveChangesAsync();
+                            LogToConsole("Saved connected device information.");
+                        }
+                        catch (Exception ex)
+                        {
+                            LogToConsole($"Error saving device setting: {ex.Message}");
+                        }
+
                         UpdateCommandButtonsState(true); // Enable command buttons
                     }
                     else
@@ -402,7 +414,7 @@ namespace OpenWhoop.MauiApp
         }
         private void OnCmdFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]
         {
-           // LogToConsole($"[MainPage CMD_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
+            // LogToConsole($"[MainPage CMD_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
             if (!packet.IsValid)
             {
                 LogToConsole($"[MainPage CMD_FROM_STRAP] Invalid packet received: {packet.ErrorMessage}");
@@ -510,17 +522,76 @@ namespace OpenWhoop.MauiApp
         private async void OnMainPageDisappearing(object sender, EventArgs e)
         {
             LogToConsole("MainPage disappearing. Cleaning up resources.");
-            if (_scanner != null)
+            if (_btService != null)
             {
-                await _scanner.StopScanAsync();
-                _scanner.Dispose();
-                _scanner = null;
+                await _btService.StopScanAsync();
+                _btService.Dispose();
+                _btService = null;
             }
             await DisconnectCurrentDevice();
             if (_dbContext != null)
             {
                 await _dbContext.DisposeAsync();
                 _dbContext = null;
+            }
+        }
+
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+            await TryReconnectSavedDeviceAsync();
+        }
+
+        private async Task TryReconnectSavedDeviceAsync()
+        {
+            try
+            {
+                var saved = await _dbContext.StoredDeviceSettings
+                    .OrderByDescending(s => s.LastConnectedUtc)
+                    .FirstOrDefaultAsync();
+                if (saved != null)
+                {
+                    ScanButton.IsVisible = false;
+                    LogToConsole($"Found saved device {saved.DeviceName}, attempting reconnect...");
+                    StatusLabel.Text = $"Status: Reconnecting to {saved.DeviceName}...";
+
+                    IDevice bleDevice;
+                    try
+                    {
+                        bleDevice = await _btService.ConnectToKnownDeviceAsync(Guid.Parse(saved.DeviceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        LogToConsole($"Auto-reconnect failed: {ex.Message}");
+                        ScanButton.IsVisible = true;
+                        return;
+                    }
+
+                    _connectedWhoopDevice = new WhoopDevice(bleDevice, _dbContext);
+                    _connectedWhoopDevice.Disconnected += OnDeviceDisconnectedHandler;
+                    _connectedWhoopDevice.DataFromStrapReceived += OnDataFromStrapReceivedHandler;
+                    _connectedWhoopDevice.CmdFromStrapReceived += OnCmdFromStrapReceivedHandler;
+                    _connectedWhoopDevice.EventsFromStrapReceived += OnEventsFromStrapReceivedHandler;
+
+                    // Initialize device
+                    bool initialized = await _connectedWhoopDevice.InitializeAsync();
+                    if (initialized)
+                    {
+                        LogToConsole($"Reconnected to {saved.DeviceName}. Ready for commands.");
+                        UpdateCommandButtonsState(true);
+                        StatusLabel.Text = $"Status: Connected to {saved.DeviceName}.";
+                    }
+                    else
+                    {
+                        LogToConsole($"Initialization after reconnect failed for {saved.DeviceName}.");
+                        ScanButton.IsVisible = true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogToConsole($"Error during auto-reconnect: {ex.Message}");
+                ScanButton.IsVisible = true;
             }
         }
     }

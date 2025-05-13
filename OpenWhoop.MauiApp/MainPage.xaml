@@ -6,7 +6,7 @@
 
     <Grid RowDefinitions="Auto, Auto, Auto, *, Auto" ColumnDefinitions="*" Padding="10">
 
-        <Button Grid.Row="0" Text="Scan for Devices" Clicked="OnScanClicked" Margin="0,0,0,10"/>
+        <Button Grid.Row="0" Text="Scan for Devices" x:Name ="ScanButton"  Clicked="OnScanClicked" Margin="0,0,0,10"/>
 
         <ListView Grid.Row="1" ItemsSource="{Binding Devices}" ItemSelected="OnDeviceSelected" Margin="0,0,0,10" MaximumHeightRequest="200">
             <ListView.ItemTemplate>

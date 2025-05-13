@@ -134,6 +134,21 @@ namespace OpenWhoop.Core.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "StoredDeviceSettings",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "INTEGER", nullable: false)
+                        .Annotation("Sqlite:Autoincrement", true),
+                    DeviceId = table.Column<string>(type: "TEXT", maxLength: 100, nullable: true),
+                    DeviceName = table.Column<string>(type: "TEXT", maxLength: 200, nullable: true),
+                    LastConnectedUtc = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "datetime('now', 'utc')")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_StoredDeviceSettings", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "StressSamples",
                 columns: table => new
                 {
@@ -237,6 +252,11 @@ namespace OpenWhoop.Core.Data.Migrations
                 column: "Timestamp");
 
             migrationBuilder.CreateIndex(
+                name: "IX_StoredDeviceSettings_DeviceId",
+                table: "StoredDeviceSettings",
+                column: "DeviceId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_StressSamples_Timestamp",
                 table: "StressSamples",
                 column: "Timestamp");
@@ -265,6 +285,9 @@ namespace OpenWhoop.Core.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "SleepEvents");
+
+            migrationBuilder.DropTable(
+                name: "StoredDeviceSettings");
 
             migrationBuilder.DropTable(
                 name: "StressSamples");

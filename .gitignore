@@ -5,3 +5,4 @@ _ReSharper.*
 bin
 obj
 packages
+OpenWhoop.Core.Data/openwhoop_design.db

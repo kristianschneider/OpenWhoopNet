@@ -14,8 +14,9 @@ namespace OpenWhoop.Core.Data
         public DbSet<SleepEvent> SleepEvents { get; set; }
         public DbSet<StressSample> StressSamples { get; set; }
         public DbSet<User> Users { get; set; }
+        public DbSet<StoredDeviceSetting> StoredDeviceSettings { get; set; } // Add this line
 
-        private readonly string _databasePath;
+        private string? _databasePath; // Made nullable
 
         // Constructor that accepts a database path (connection string for SQLite)
         // This is useful if the path is determined at runtime (e.g., from command line args)
@@ -36,32 +37,15 @@ namespace OpenWhoop.Core.Data
         // }
 
         // Constructor for use with ASP.NET Core DI or when options are configured externally
-        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
-        {
-            // If using this constructor, _databasePath might not be set unless you handle it.
-            // Typically, the connection string is part of the options.
-        }
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            if (!optionsBuilder.IsConfigured)
+            if (!optionsBuilder.IsConfigured && !string.IsNullOrEmpty(_databasePath))
             {
-                if (!string.IsNullOrEmpty(_databasePath))
-                {
-                    optionsBuilder.UseSqlite($"Data Source={_databasePath}");
-                }
-                else
-                {
-                    // Fallback or throw if path isn't provided and options aren't configured.
-                    // This is important for migrations if the parameterless constructor isn't sufficient
-                    // or if you're not using a design-time DbContext factory.
-                    // For now, let's assume _databasePath will be set by the application
-                    // or options will be passed in.
-                    // If running migrations from this project directly, you might need a
-                    // design-time factory (IDesignTimeDbContextFactory).
-                    optionsBuilder.UseSqlite("Data Source=openwhoop_design_time.db"); // Default for tools
-                }
+                optionsBuilder.UseSqlite($"Data Source={_databasePath}");
             }
+            base.OnConfiguring(optionsBuilder);
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -173,6 +157,18 @@ namespace OpenWhoop.Core.Data
             // which preserves the offset. This is generally good.
             // For `CreatedAt` and `UpdatedAt` with `datetime('now', 'utc')`, ensure this stores
             // as UTC. SQLite's `datetime('now')` is UTC by default.
+            modelBuilder.Entity<StoredDeviceSetting>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.DeviceId).HasMaxLength(100); // Optional: set a reasonable max length
+                entity.Property(e => e.DeviceName).HasMaxLength(200); // Optional: set a reasonable max length
+                entity.HasIndex(e => e.DeviceId); // Optional: if you query by DeviceId
+                entity.Property(e => e.LastConnectedUtc)
+                    .HasDefaultValueSql("datetime('now', 'utc')"); // Optional: default to now
+            });
+
         }
+
     }
 }

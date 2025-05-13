@@ -11,7 +11,7 @@ using OpenWhoop.Core.Data;
 namespace OpenWhoop.Core.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250511191127_InitialCreate")]
+    [Migration("20250513193125_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -311,6 +311,32 @@ namespace OpenWhoop.Core.Data.Migrations
                     b.HasIndex("Timestamp");
 
                     b.ToTable("SleepEvents");
+                });
+
+            modelBuilder.Entity("OpenWhoop.Core.Entities.StoredDeviceSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastConnectedUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now', 'utc')");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.ToTable("StoredDeviceSettings");
                 });
 
             modelBuilder.Entity("OpenWhoop.Core.Entities.StressSample", b =>

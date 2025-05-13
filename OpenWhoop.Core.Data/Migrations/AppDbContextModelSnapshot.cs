@@ -310,6 +310,32 @@ namespace OpenWhoop.Core.Data.Migrations
                     b.ToTable("SleepEvents");
                 });
 
+            modelBuilder.Entity("OpenWhoop.Core.Entities.StoredDeviceSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastConnectedUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now', 'utc')");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.ToTable("StoredDeviceSettings");
+                });
+
             modelBuilder.Entity("OpenWhoop.Core.Entities.StressSample", b =>
                 {
                     b.Property<int>("Id")
