@@ -36,7 +36,6 @@ public class WhoopDevice : IDisposable
     public DeviceState State => _peripheral.State;
     public DeviceBondState BondState => _peripheral.BondState;
 
-
     public WhoopDevice(IDevice peripheral, AppDbContext dbContext)
     {
         _peripheral = peripheral ?? throw new ArgumentNullException(nameof(peripheral));
@@ -47,7 +46,6 @@ public class WhoopDevice : IDisposable
         _adapter.DeviceDisconnected += OnDeviceDisconnectedHandler;
         _adapter.DeviceConnectionLost += OnDeviceConnectionLostHandler;
     }
-
     private void OnDeviceDisconnectedHandler(object sender, DeviceEventArgs e)
     {
         if (e.Device.Id == _peripheral.Id)
@@ -192,6 +190,7 @@ public class WhoopDevice : IDisposable
             Debug.WriteLine("[WhoopDevice] Sending EnterHighFreqSync command...");
             var pb = new WhoopPacketBuilder();
             byte[] highFreqSyncPacket = pb.EnterHighFreqSync();
+            //[170, 7, 0, 107, 35, 0, 97, 101, 112, 255, 255]
             bool sentHighFreqSync = await SendCommandAsync(highFreqSyncPacket, cancellationToken);
             if (sentHighFreqSync)
             {
@@ -220,8 +219,8 @@ public class WhoopDevice : IDisposable
     private void OnCharacteristicValueUpdated(CharacteristicUpdatedEventArgs args, Action<ParsedWhoopPacket> raiseEvent, string characteristicName)
     {
         string rawDataHex = BitConverter.ToString(args.Characteristic.Value);
-        // Console.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex} (From Char: {args.Characteristic.Id})"); // Logged by MainPage now if needed
-        // Debug.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex}");
+         Console.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex} (From Char: {args.Characteristic.Id})"); // Logged by MainPage now if needed
+         Debug.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex}");
 
         if (ParsedWhoopPacket.TryParse(args.Characteristic.Value, out var parsedPacket))
         {
@@ -296,31 +295,7 @@ public class WhoopDevice : IDisposable
             }
         }
     }
-
-    //private void OnDataFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
-    //{
-    //    string message = $"[WhoopDevice INTERNAL RAW DATA_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
-    //    Console.WriteLine(message);
-    //    Debug.WriteLine(message);
-    //    DataFromStrapReceived?.Invoke(this, args.Characteristic.Value);
-    //}
-
-    //private void OnCmdFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
-    //{
-    //    string message = $"[WhoopDevice INTERNAL RAW CMD_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
-    //    Console.WriteLine(message);
-    //    Debug.WriteLine(message);
-    //    CmdFromStrapReceived?.Invoke(this, args.Characteristic.Value);
-    //}
-
-    //private void OnEventsFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
-    //{
-    //    string message = $"[WhoopDevice INTERNAL RAW EVENTS_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
-    //    Console.WriteLine(message);
-    //    Debug.WriteLine(message);
-    //    EventsFromStrapReceived?.Invoke(this, args.Characteristic.Value);
-    //}
-
+   
     public async Task<bool> SendCommandAsync(byte[] commandData, CancellationToken cancellationToken = default)
     {
         if (State != DeviceState.Connected || _cmdToStrapCharacteristic == null)

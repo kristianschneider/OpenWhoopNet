@@ -24,11 +24,11 @@
         <!-- Add a section for command buttons -->
         <VerticalStackLayout Grid.Row="2" Spacing="5" Margin="0,0,0,10">
             <Label Text="Device Commands:" FontAttributes="Bold"/>
-            <Button Text="Get Battery" Clicked="OnGetBatteryLevelClicked" x:Name="GetBatteryButton" IsEnabled="False"/>
+            <Button Text="Hello harward" Clicked="OnGetHelloClicked" x:Name="GetHello" IsEnabled="False"/>
             <Button Text="Toggle Realtime HR (On)" Clicked="OnToggleRealtimeHrOnClicked" x:Name="ToggleHrOnButton" IsEnabled="False"/>
             <Button Text="Toggle Realtime HR (Off)" Clicked="OnToggleRealtimeHrOffClicked" x:Name="ToggleHrOffButton" IsEnabled="False"/>
             <Button Text="Sync Last 6 Hours HR" Clicked="OnSyncLast6HoursClicked" x:Name="Sync6HoursButton" IsEnabled="False"/>
-            <Button Text="Abort Historical Sync" Clicked="OnAbortHistoricalSyncClicked" x:Name="AbortHistoricalButton" IsEnabled="False"/>
+            <!--<Button Text="Abort Historical Sync" Clicked="OnAbortHistoricalSyncClicked" x:Name="AbortHistoricalButton" IsEnabled="False"/>-->
             <Button Text="Disconnect" Clicked="OnDisconnectClicked" x:Name="DisconnectButton" IsEnabled="False"/>
         </VerticalStackLayout>
 

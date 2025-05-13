@@ -78,37 +78,43 @@ namespace OpenWhoop.App.Protocol
                 return false;
             }
 
-            if (length > rawData.Length - offset || length < 8)
+
+
+            // sanity-check just as you have it:
+            if (length < 8 || length > rawData.Length - offset)
             {
                 packet.Error = PacketParseError.DataLengthMismatch;
                 return false;
             }
 
-            int payloadLength = length - 8;
-            if (payloadLength < 3) // At least packet_type, seq, cmd
-            {
+            // peel out the packet body(packet_type + seq + cmd + payload)
+            int pktLen = length - 4;        // drop the trailing CRC32
+            if (pktLen < 3)
+            {               // need at least packet_type, seq, cmd
                 packet.Error = PacketParseError.DataLengthMismatch;
                 return false;
             }
 
-            var payload = new byte[payloadLength];
-            Array.Copy(rawData, offset, payload, 0, payloadLength);
-            offset += payloadLength;
+            // verify CRC32 over those pktLen bytes
+            int crc32Offset = offset + pktLen;
+            uint expectedCrc32 = BitConverter.ToUInt32(rawData, crc32Offset);
+            uint calculatedCrc32 = Crc.Crc32(rawData, offset, pktLen);
+            if (expectedCrc32 != calculatedCrc32)
+            {
+                packet.Error = PacketParseError.PayloadCrcMismatch;
+                return false;
+            }
 
-            //uint expectedCrc32 = BitConverter.ToUInt32(rawData, offset);
-            //uint calculatedCrc32 = Crc32.Compute(payload, 0, payload.Length); // <-- Use CRC32 here!
-            //if (expectedCrc32 != calculatedCrc32)
-            //{
-            //    packet.Error = PacketParseError.PayloadCrcMismatch;
-            //    return false;
-            //}
+            // now split out the fields
+            packet.PacketType = (PacketType)rawData[offset];
+            packet.Sequence = rawData[offset + 1];
+            packet.CommandOrEventNumber = rawData[offset + 2];
 
-            // Now extract fields from payload
-            int payloadOffset = 0;
-            packet.PacketType = (PacketType)payload[payloadOffset++];
-            packet.Sequence = payload[payloadOffset++];
-            packet.CommandOrEventNumber = payload[payloadOffset++];
-            packet.Payload = new ArraySegment<byte>(payload, payloadOffset, payload.Length - payloadOffset);
+            // and the actual payload is the remainder:
+            int payloadLength = pktLen - 3;   // pktLen minus the 3 header bytes
+            packet.Payload = new ArraySegment<byte>(rawData,
+                offset + 3,
+                payloadLength);
 
             packet.IsValid = true;
             return true;
