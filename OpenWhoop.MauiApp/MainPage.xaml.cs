@@ -9,6 +9,7 @@ using Plugin.BLE.Abstractions.Contracts;
 using Microsoft.EntityFrameworkCore;
 using OpenWhoop.App; // For WhoopDevice, WhoopPacketBuilder, Enums
 using System.Linq;
+using OpenWhoop.App.Protocol;
 
 namespace OpenWhoop.MauiApp
 {
@@ -19,6 +20,9 @@ namespace OpenWhoop.MauiApp
 
         private WhoopDevice _connectedWhoopDevice;
         private AppDbContext _dbContext;
+        private bool _isHistoricalSyncActive = false;
+        private DateTimeOffset _historicalSyncStartTime;
+        private DateTimeOffset _historicalSyncEndTime;
 
         private string _consoleOutput = string.Empty;
         public string ConsoleOutput
@@ -41,6 +45,7 @@ namespace OpenWhoop.MauiApp
             SetupDbContext();
             BindingContext = this;
             this.Disappearing += OnMainPageDisappearing;
+            UpdateCommandButtonsState(false); // Initially disable all command buttons
             StatusLabel.Text = "Status: Ready. Scan for devices.";
         }
 
@@ -132,8 +137,7 @@ namespace OpenWhoop.MauiApp
                     if (initialized)
                     {
                         LogToConsole($"{bleDevice.Name} initialized successfully. Ready for commands.");
-                        StatusLabel.Text = $"Status: {bleDevice.Name} initialized (Bonded: {_connectedWhoopDevice.BondState}). Sending test commands...";
-                        await SendTestCommands();
+                        UpdateCommandButtonsState(true); // Enable command buttons
                     }
                     else
                     {
@@ -153,117 +157,319 @@ namespace OpenWhoop.MauiApp
             }
             if (sender is ListView listViewAfterSelection) listViewAfterSelection.SelectedItem = null;
         }
-
-        private async Task SendTestCommands()
+        private void UpdateCommandButtonsState(bool isEnabled)
         {
-            if (_connectedWhoopDevice == null || _connectedWhoopDevice.State != Plugin.BLE.Abstractions.DeviceState.Connected) return;
-
-            LogToConsole("Sending ToggleRealtimeHr(enable: true) command...");
-            byte[] toggleHrPacket = WhoopPacketBuilder.ToggleRealtimeHr(true);
-            bool sentHrToggle = await _connectedWhoopDevice.SendCommandAsync(toggleHrPacket);
-            LogToConsole(sentHrToggle ? "ToggleRealtimeHr(true) command sent." : "Failed to send ToggleRealtimeHr(true) command.");
-
-            await Task.Delay(500); // Small delay
-
-            LogToConsole("Sending GetBatteryLevel command...");
-            byte[] getBatteryPacket = WhoopPacketBuilder.GetBatteryLevel();
-            bool sentBattery = await _connectedWhoopDevice.SendCommandAsync(getBatteryPacket);
-            LogToConsole(sentBattery ? "GetBatteryLevel command sent." : "Failed to send GetBatteryLevel command.");
+            GetBatteryButton.IsEnabled = isEnabled;
+            ToggleHrOnButton.IsEnabled = isEnabled;
+            ToggleHrOffButton.IsEnabled = isEnabled;
+            AbortHistoricalButton.IsEnabled = isEnabled;
+            DisconnectButton.IsEnabled = isEnabled;
+            Sync6HoursButton.IsEnabled = isEnabled;
         }
-
-
-        private void OnDataFromStrapReceivedHandler(object sender, byte[] data)
+        private async void OnSyncLast6HoursClicked(object sender, EventArgs e)
         {
-            LogToConsole($"[MainPage DATA_FROM_STRAP RAW]: {BitConverter.ToString(data)}");
-            if (data == null || data.Length < 3) return;
-
-            PacketType packetType = (PacketType)data[0];
-            byte payloadLengthInHeader = data[2];
-
-            if (packetType == PacketType.RealtimeData) // RealtimeData = 40
+            if (!IsDeviceConnectedAndReady()) return;
+            if (_isHistoricalSyncActive)
             {
-                LogToConsole("[MainPage DATA_FROM_STRAP] Received RealtimeData packet.");
-                if (payloadLengthInHeader >= 1 && data.Length >= 4)
-                {
-                    byte heartRate = data[3];
-                    LogToConsole($"--- HEART RATE (RealtimeData): {heartRate} bpm ---");
-                    MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: HR: {heartRate} bpm");
-                }
-                else LogToConsole("[MainPage DATA_FROM_STRAP] RealtimeData packet payload too short for HR.");
-            }
-        }
-
-        private void OnCmdFromStrapReceivedHandler(object sender, byte[] data)
-        {
-            LogToConsole($"[MainPage CMD_FROM_STRAP RAW]: {BitConverter.ToString(data)}");
-            if (data == null || data.Length < 4) return;
-
-            PacketType packetType = (PacketType)data[0];
-            byte payloadLength = data[2];
-
-            if (packetType == PacketType.CommandResponse)
-            {
-                CommandNumber originalCommand = (CommandNumber)data[3];
-                LogToConsole($"Parsed CommandResponse for: {originalCommand}");
-
-                if (originalCommand == CommandNumber.GetBatteryLevel)
-                {
-                    if (payloadLength >= 2 && data.Length >= 5)
-                    {
-                        byte batteryLevel = data[4];
-                        LogToConsole($"Battery Level (from CommandResponse): {batteryLevel}%");
-                        MainThread.BeginInvokeOnMainThread(async () => {
-                            StatusLabel.Text = $"Status: Battery: {batteryLevel}%";
-                            await DisplayAlert("Battery Level", $"Strap Battery (CMD_RESP): {batteryLevel}%", "OK");
-                        });
-                    }
-                }
-            }
-        }
-
-        private void OnEventsFromStrapReceivedHandler(object sender, byte[] data)
-        {
-            LogToConsole($"[MainPage EVENTS_FROM_STRAP RAW]: {BitConverter.ToString(data)}");
-            if (data == null || data.Length < 1) return;
-
-            if (data[0] == 0xAA) // Handle the non-standard 0xAA prefixed events separately
-            {
-                LogToConsole($"Received 0xAA-prefixed event. Full data: {BitConverter.ToString(data)}. Further parsing needed based on device spec.");
+                LogToConsole("Historical sync is already active. Abort first if you want to restart.");
                 return;
             }
 
-            if (data.Length < 4) return; // Standard Whoop Event packet check
+            _historicalSyncEndTime = DateTimeOffset.UtcNow;
+            _historicalSyncStartTime = _historicalSyncEndTime.AddHours(-6);
+            uint startTimestampUnix = (uint)_historicalSyncStartTime.ToUnixTimeSeconds();
 
-            PacketType packetType = (PacketType)data[0];
-            byte payloadLength = data[2];
+            LogToConsole($"Requesting historical HR data from: {_historicalSyncStartTime:yyyy-MM-dd HH:mm:ss} UTC (Unix: {startTimestampUnix})");
+            LogToConsole($"Window ends at: {_historicalSyncEndTime:yyyy-MM-dd HH:mm:ss} UTC (Unix: {(uint)_historicalSyncEndTime.ToUnixTimeSeconds()})");
 
-            if (packetType == PacketType.Event) // Event = 48 (0x30)
+
+            LogToConsole("Sending SetReadPointer command...");
+            var pb = new WhoopPacketBuilder();
+            byte[] setPointerPacket = pb.SetReadPointer(startTimestampUnix);
+            bool pointerSent = await _connectedWhoopDevice.SendCommandAsync(setPointerPacket);
+            if (!pointerSent)
             {
-                if (payloadLength < 1) return;
-                EventNumber eventNumber = (EventNumber)data[3];
+                LogToConsole("Failed to send SetReadPointer command.");
+                return;
+            }
+            LogToConsole("SetReadPointer command sent. Waiting briefly...");
+            await Task.Delay(500); // Give strap a moment to process
+
+            LogToConsole("Sending SendHistoricalData(start: true) command...");
+            var pb2 = new WhoopPacketBuilder();
+            byte[] startSyncPacket = pb2.SendHistoricalData(true);
+            bool syncStarted = await _connectedWhoopDevice.SendCommandAsync(startSyncPacket);
+
+            if (syncStarted)
+            {
+                LogToConsole("SendHistoricalData(true) command sent. Sync active.");
+                _isHistoricalSyncActive = true;
+                StatusLabel.Text = "Status: Syncing last 6hrs HR...";
+            }
+            else
+            {
+                LogToConsole("Failed to send SendHistoricalData(true) command.");
+                _isHistoricalSyncActive = false;
+            }
+            UpdateCommandButtonsState(true); // Re-evaluate button states
+        }
+        private async void OnGetBatteryLevelClicked(object sender, EventArgs e)
+        {
+            if (!IsDeviceConnectedAndReady()) return;
+            LogToConsole("Sending GetBatteryLevel command...");
+            byte[] packet = WhoopPacketBuilder.GetBatteryLevel();
+            bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
+            LogToConsole(sent ? "GetBatteryLevel command sent." : "Failed to send GetBatteryLevel command.");
+        }
+        private async void OnToggleRealtimeHrOnClicked(object sender, EventArgs e)
+        {
+            if (!IsDeviceConnectedAndReady()) return;
+            LogToConsole("Sending ToggleRealtimeHr(enable: true) command...");
+            byte[] packet = WhoopPacketBuilder.ToggleRealtimeHr(true);
+            bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
+            LogToConsole(sent ? "ToggleRealtimeHr(true) command sent." : "Failed to send ToggleRealtimeHr(true) command.");
+        }
+
+        private async void OnToggleRealtimeHrOffClicked(object sender, EventArgs e)
+        {
+            if (!IsDeviceConnectedAndReady()) return;
+            LogToConsole("Sending ToggleRealtimeHr(enable: false) command...");
+            byte[] packet = WhoopPacketBuilder.ToggleRealtimeHr(false);
+            bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
+            LogToConsole(sent ? "ToggleRealtimeHr(false) command sent." : "Failed to send ToggleRealtimeHr(false) command.");
+        }
+
+        private async void OnDisconnectClicked(object sender, EventArgs e)
+        {
+            await DisconnectCurrentDevice();
+        }
+
+        // --- New Historical Data Command Button Click Handlers ---
+        private async void OnSetReadPointerZeroClicked(object sender, EventArgs e)
+        {
+            //if (!IsDeviceConnectedAndReady()) return;
+            //LogToConsole("Sending SetReadPointer(0) command...");
+            //// Using 0 as a common way to request data from the beginning
+            //byte[] packet = WhoopPacketBuilder.SetReadPointer(0);
+            //bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
+            //LogToConsole(sent ? "SetReadPointer(0) command sent." : "Failed to send SetReadPointer(0) command.");
+        }
+
+        private async void OnStartHistoricalSyncClicked(object sender, EventArgs e)
+        {
+        //    if (!IsDeviceConnectedAndReady()) return;
+        //    LogToConsole("Sending SendHistoricalData(start: true) command...");
+        //    byte[] packet = WhoopPacketBuilder.SendHistoricalData(true);
+        //    bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
+        //    LogToConsole(sent ? "SendHistoricalData(true) command sent." : "Failed to send SendHistoricalData(true) command.");
+        //    StatusLabel.Text = "Status: Historical sync requested...";
+        }
+
+        private async void OnAbortHistoricalSyncClicked(object sender, EventArgs e)
+        {
+            //if (!IsDeviceConnectedAndReady()) return;
+            //LogToConsole("Sending AbortHistoricalTransmits command...");
+            //byte[] packet = WhoopPacketBuilder.AbortHistoricalTransmits();
+            //bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
+            //LogToConsole(sent ? "AbortHistoricalTransmits command sent." : "Failed to send AbortHistoricalTransmits command.");
+            //StatusLabel.Text = "Status: Historical sync abort requested.";
+        }
+
+        private bool IsDeviceConnectedAndReady()
+        {
+            if (_connectedWhoopDevice == null || _connectedWhoopDevice.State != Plugin.BLE.Abstractions.DeviceState.Connected)
+            {
+                LogToConsole("Device not connected or not ready.");
+                return false;
+            }
+            return true;
+        }
+
+
+       private void OnDataFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]
+        {
+            LogToConsole($"[MainPage DATA_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
+            if (!packet.IsValid)
+            {
+                LogToConsole($"[MainPage DATA_FROM_STRAP] Invalid packet received: {packet.ErrorMessage}");
+                return;
+            }
+
+            LogToConsole($"[MainPage DATA_FROM_STRAP]: Type={packet.PacketType}, Cmd/Evt={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Count}");
+
+            if (packet.PacketType == PacketType.RealtimeData)
+            {
+                LogToConsole("[MainPage DATA_FROM_STRAP] Received RealtimeData packet.");
+                if (packet.Payload.Count >= 1)
+                {
+                    byte heartRate = packet.Payload.Array[packet.Payload.Offset];
+                    LogToConsole($"--- HEART RATE (RealtimeData): {heartRate} bpm ---");
+                    MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: HR: {heartRate} bpm");
+                }
+                else
+                {
+                    LogToConsole("RealtimeData packet has insufficient payload length.");
+                }
+            }
+            else if (packet.PacketType == PacketType.HistoricalData)
+            {
+                LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Count}");
+                if (!_isHistoricalSyncActive)
+                {
+                    LogToConsole("Received HistoricalData but sync is not marked active. Ignoring.");
+                    return;
+                }
+
+                const int recordSize = 5; // 4 for timestamp, 1 for HR
+                int numRecordsProcessed = 0;
+                
+                int currentOffsetInPayload = 0;
+                while (currentOffsetInPayload + recordSize <= packet.Payload.Count)
+                {
+                    uint recordTimestampUnix = BitConverter.ToUInt32(packet.Payload.Array, packet.Payload.Offset + currentOffsetInPayload);
+                    byte hr = packet.Payload.Array[packet.Payload.Offset + currentOffsetInPayload + 4];
+                    DateTimeOffset recordTime = DateTimeOffset.FromUnixTimeSeconds(recordTimestampUnix);
+
+                    LogToConsole($"  Raw Historical Record: TimestampUnix={recordTimestampUnix} ({recordTime:yyyy-MM-dd HH:mm:ss} UTC), HR={hr}");
+
+                    if (recordTime >= _historicalSyncStartTime && recordTime < _historicalSyncEndTime)
+                    {
+                        LogToConsole($"    VALID (in window): HR: {hr} at {recordTime:HH:mm:ss}");
+                        numRecordsProcessed++;
+                    }
+                    else if (recordTime >= _historicalSyncEndTime)
+                    {
+                        LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEYOND sync window end time. Requesting abort.");
+                        MainThread.BeginInvokeOnMainThread(async () => {
+                          //  await AbortHistoricalSyncIfNeeded(); // Implement this method if needed
+                        });
+                        _isHistoricalSyncActive = false; // Stop sync as we are past the window
+                        StatusLabel.Text = "Status: Historical sync window ended.";
+                        LogToConsole("Historical sync stopped: data beyond end time.");
+                        // Consider sending AbortHistoricalTransmits command here
+                        // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits();
+                        // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
+                        break; 
+                    }
+                    else
+                    {
+                        LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEFORE sync window start time. Skipping.");
+                    }
+                    currentOffsetInPayload += recordSize;
+                }
+
+                if (numRecordsProcessed > 0)
+                {
+                    MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: Got {numRecordsProcessed} historical HR.");
+                }
+                if (currentOffsetInPayload < packet.Payload.Count && packet.Payload.Count > 0) // Check for partial record
+                {
+                    LogToConsole($"  Warning: Partial historical record at end of payload. Remaining bytes: {packet.Payload.Count - currentOffsetInPayload}");
+                }
+                // If no records were processed and we are still active, it might be the end of data or an empty packet.
+                // The strap might send an empty HistoricalData packet to signify end of transmission.
+                // Check openwhoop behavior for how it detects end of historical sync.
+                if (packet.Payload.Count == 0 && _isHistoricalSyncActive)
+                {
+                    LogToConsole("Received empty HistoricalData packet. Assuming end of sync.");
+                    _isHistoricalSyncActive = false;
+                    StatusLabel.Text = "Status: Historical sync complete (empty packet).";
+                     // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits(); // Good practice to send abort
+                     // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
+                }
+            }
+        }
+
+      
+        private void OnEventsFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]
+        {
+            LogToConsole($"[MainPage EVENTS_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
+            if (!packet.IsValid)
+            {
+                LogToConsole($"[MainPage EVENTS_FROM_STRAP] Invalid packet received: {packet.ErrorMessage}");
+                return;
+            }
+
+            LogToConsole($"[MainPage EVENTS_FROM_STRAP]: Type={packet.PacketType}, EventNum={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Count}");
+
+            if (packet.PacketType == PacketType.Event)
+            {
+                EventNumber eventNumber = (EventNumber)packet.CommandOrEventNumber;
                 LogToConsole($"Parsed Event: {eventNumber}");
 
-                if (eventNumber == EventNumber.BatteryLevel) // BatteryLevel = 3
+                if (eventNumber == EventNumber.BatteryLevel)
                 {
-                    if (payloadLength >= 2 && data.Length >= 5)
+                    if (packet.Payload.Count >= 1)
                     {
-                        byte batteryLevelValue = data[4];
+                        byte batteryLevelValue = packet.Payload.Array[packet.Payload.Offset];
                         LogToConsole($"Battery Level Event: {batteryLevelValue}%");
                         MainThread.BeginInvokeOnMainThread(async () => {
                             StatusLabel.Text = $"Status: Battery Event: {batteryLevelValue}%";
                             await DisplayAlert("Battery Level", $"Strap Battery (Event): {batteryLevelValue}%", "OK");
                         });
                     }
+                    else
+                    {
+                         LogToConsole("BatteryLevel Event packet has insufficient payload length.");
+                    }
                 }
-                else if (eventNumber == EventNumber.BleBonded) // BleBonded = 23
+                else if (eventNumber == EventNumber.BleBonded)
                 {
                     LogToConsole("--- !!! Received BleBonded event from strap! ---");
                     MainThread.BeginInvokeOnMainThread(async () => await DisplayAlert("Bonding Event", "Received 'BleBonded' event from the strap!", "OK"));
                 }
+                else if (eventNumber == EventNumber.DoubleTap)
+                {
+                    LogToConsole("--- !!! Received DoubleTap event from strap! ---");
+                    MainThread.BeginInvokeOnMainThread(async () => await DisplayAlert("DoubleTap", "Received 'DoubleTap' event from the strap!", "OK"));
+                }
+                // ... other event numbers
             }
-            else LogToConsole($"Received packet type {packetType} on EVENTS_FROM_STRAP, but expected Event (48).");
+            else 
+            {
+                LogToConsole($"Received packet type {packet.PacketType} on EVENTS_FROM_STRAP, but expected Event ({PacketType.Event}).");
+            }
         }
 
+        private void OnCmdFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]
+        {
+            LogToConsole($"[MainPage CMD_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
+            if (!packet.IsValid)
+            {
+                LogToConsole($"[MainPage CMD_FROM_STRAP] Invalid packet received: {packet.ErrorMessage}");
+                return;
+            }
+            
+            LogToConsole($"[MainPage CMD_FROM_STRAP]: Type={packet.PacketType}, OrigCmd={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Count}");
+
+            if (packet.PacketType == PacketType.CommandResponse)
+            {
+                CommandNumber originalCommand = (CommandNumber)packet.CommandOrEventNumber;
+                LogToConsole($"Parsed CommandResponse for: {originalCommand}");
+
+                if (originalCommand == CommandNumber.GetBatteryLevel)
+                {
+                    if (packet.Payload.Count >= 1)
+                    {
+                        byte batteryLevel = packet.Payload.Array[packet.Payload.Offset];
+                        LogToConsole($"Battery Level (from CommandResponse): {batteryLevel}%");
+                        MainThread.BeginInvokeOnMainThread(async () => {
+                            StatusLabel.Text = $"Status: Battery: {batteryLevel}%";
+                            await DisplayAlert("Battery Level", $"Strap Battery (CMD_RESP): {batteryLevel}%", "OK");
+                        });
+                    }
+                     else
+                    {
+                        LogToConsole("GetBatteryLevel CommandResponse packet has insufficient payload length.");
+                    }
+                }
+                // Add more command response handling here if needed
+            }
+            else
+            {
+                 LogToConsole($"Received packet type {packet.PacketType} on CMD_FROM_STRAP, but expected CommandResponse ({PacketType.CommandResponse}).");
+            }
+        }
         private void OnDeviceDisconnectedHandler(object sender, EventArgs e)
         {
             if (sender is WhoopDevice disconnectedDevice)

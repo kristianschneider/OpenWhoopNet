@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenWhoop.App", "OpenWhoop.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenWhoop.MauiApp", "OpenWhoop.MauiApp\OpenWhoop.MauiApp.csproj", "{A9567CB9-FD18-47A0-A642-AE88BCD5EAB1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenWhoop.Tests", "OpenWhoop.Tests\OpenWhoop.Tests.csproj", "{E916770E-8135-4ACA-B695-540087BA3802}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -31,8 +33,13 @@ Global
 		{255949A4-86B6-8534-34B2-3CB19CD422C9}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A9567CB9-FD18-47A0-A642-AE88BCD5EAB1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A9567CB9-FD18-47A0-A642-AE88BCD5EAB1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9567CB9-FD18-47A0-A642-AE88BCD5EAB1}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
 		{A9567CB9-FD18-47A0-A642-AE88BCD5EAB1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A9567CB9-FD18-47A0-A642-AE88BCD5EAB1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E916770E-8135-4ACA-B695-540087BA3802}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E916770E-8135-4ACA-B695-540087BA3802}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E916770E-8135-4ACA-B695-540087BA3802}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E916770E-8135-4ACA-B695-540087BA3802}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

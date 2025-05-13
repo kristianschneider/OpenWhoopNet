@@ -4,11 +4,11 @@
              x:Class="OpenWhoop.MauiApp.MainPage"
              Title="OpenWhoop MAUI (HR Test)">
 
-    <Grid RowDefinitions="Auto, Auto, *, Auto" ColumnDefinitions="*" Padding="10">
+    <Grid RowDefinitions="Auto, Auto, Auto, *, Auto" ColumnDefinitions="*" Padding="10">
 
         <Button Grid.Row="0" Text="Scan for Devices" Clicked="OnScanClicked" Margin="0,0,0,10"/>
 
-        <ListView Grid.Row="1" ItemsSource="{Binding Devices}" ItemSelected="OnDeviceSelected" Margin="0,0,0,10">
+        <ListView Grid.Row="1" ItemsSource="{Binding Devices}" ItemSelected="OnDeviceSelected" Margin="0,0,0,10" MaximumHeightRequest="200">
             <ListView.ItemTemplate>
                 <DataTemplate>
                     <ViewCell>
@@ -21,11 +21,23 @@
             </ListView.ItemTemplate>
         </ListView>
 
-        <ScrollView Grid.Row="2" Margin="0,10,0,0">
+        <!-- Add a section for command buttons -->
+        <VerticalStackLayout Grid.Row="2" Spacing="5" Margin="0,0,0,10">
+            <Label Text="Device Commands:" FontAttributes="Bold"/>
+            <Button Text="Get Battery" Clicked="OnGetBatteryLevelClicked" x:Name="GetBatteryButton" IsEnabled="False"/>
+            <Button Text="Toggle Realtime HR (On)" Clicked="OnToggleRealtimeHrOnClicked" x:Name="ToggleHrOnButton" IsEnabled="False"/>
+            <Button Text="Toggle Realtime HR (Off)" Clicked="OnToggleRealtimeHrOffClicked" x:Name="ToggleHrOffButton" IsEnabled="False"/>
+            <Button Text="Sync Last 6 Hours HR" Clicked="OnSyncLast6HoursClicked" x:Name="Sync6HoursButton" IsEnabled="False"/>
+            <Button Text="Abort Historical Sync" Clicked="OnAbortHistoricalSyncClicked" x:Name="AbortHistoricalButton" IsEnabled="False"/>
+            <Button Text="Disconnect" Clicked="OnDisconnectClicked" x:Name="DisconnectButton" IsEnabled="False"/>
+        </VerticalStackLayout>
+
+
+        <ScrollView Grid.Row="3" Margin="0,10,0,0">
             <Label Text="{Binding ConsoleOutput}" FontSize="Small" LineBreakMode="WordWrap"/>
         </ScrollView>
 
-        <Label Grid.Row="3" x:Name="StatusLabel" Text="Status: Ready" FontSize="Micro" Margin="0,5,0,0"/>
+        <Label Grid.Row="4" x:Name="StatusLabel" Text="Status: Ready" FontSize="Micro" Margin="0,5,0,0"/>
 
     </Grid>
 </ContentPage>

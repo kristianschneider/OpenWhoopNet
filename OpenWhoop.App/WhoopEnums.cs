@@ -107,7 +107,7 @@
         PowerCycleStrap = 32,
         SetReadPointer = 33,
         GetDataRange = 34,
-        GetHelloHarvard = 35, // Note: Rust code has GetHelloHarvard and GetHello, check which one is primary
+        GetHelloHarvard = 35, 
         StartFirmwareLoad = 36,
         LoadFirmwareData = 37,
         ProcessFirmwareImage = 38,
@@ -144,7 +144,7 @@
         ToggleImuModeHistorical = 105,
         ToggleImuMode = 106,
         ToggleOpticalMode = 108,
-        EnableOpticalData = 107, // Added from Rust
+        EnableOpticalData = 107,
         StartFfKeyExchange = 117,
         SendNextFf = 118,
         SetFfValue = 120,

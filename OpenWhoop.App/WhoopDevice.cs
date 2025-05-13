@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using OpenWhoop.App.Protocol;
 
 namespace OpenWhoop.App;
 
@@ -25,9 +26,9 @@ public class WhoopDevice : IDisposable
     private ICharacteristic _cmdFromStrapCharacteristic;
     private ICharacteristic _eventsFromStrapCharacteristic;
 
-    public event EventHandler<byte[]> DataFromStrapReceived;
-    public event EventHandler<byte[]> CmdFromStrapReceived;
-    public event EventHandler<byte[]> EventsFromStrapReceived;
+    public event EventHandler<ParsedWhoopPacket> DataFromStrapReceived;
+    public event EventHandler<ParsedWhoopPacket> CmdFromStrapReceived;
+    public event EventHandler<ParsedWhoopPacket> EventsFromStrapReceived;
     public event EventHandler Disconnected;
 
     public string Name => _peripheral.Name;
@@ -109,7 +110,7 @@ public class WhoopDevice : IDisposable
             try
             {
                 await _adapter.BondAsync(_peripheral);
-                
+
                 await Task.Delay(1000, cancellationToken); // Give time for bond state to update
 
                 if (_peripheral.BondState == DeviceBondState.Bonded)
@@ -187,6 +188,21 @@ public class WhoopDevice : IDisposable
             await SubscribeToCharacteristic(_cmdFromStrapCharacteristic, OnCmdFromStrapValueUpdated, "CMD_FROM_STRAP", cancellationToken);
             await SubscribeToCharacteristic(_eventsFromStrapCharacteristic, OnEventsFromStrapValueUpdated, "EVENTS_FROM_STRAP", cancellationToken);
 
+            // --- Add EnterHighFreqSync command ---
+            Debug.WriteLine("[WhoopDevice] Sending EnterHighFreqSync command...");
+            var pb = new WhoopPacketBuilder();
+            byte[] highFreqSyncPacket = pb.EnterHighFreqSync();
+            bool sentHighFreqSync = await SendCommandAsync(highFreqSyncPacket, cancellationToken);
+            if (sentHighFreqSync)
+            {
+                Console.WriteLine("[WhoopDevice] EnterHighFreqSync command sent successfully.");
+            }
+            else
+            {
+                Console.WriteLine("[WhoopDevice] Failed to send EnterHighFreqSync command.");
+                // You might decide if this is a critical failure or not.
+            }
+
             Console.WriteLine($"[WhoopDevice] {Name} initialized successfully.");
             return true;
         }
@@ -199,6 +215,43 @@ public class WhoopDevice : IDisposable
             Console.WriteLine($"[WhoopDevice] Error initializing {Name}: {ex.Message}");
         }
         return false;
+    }
+
+    private void OnCharacteristicValueUpdated(CharacteristicUpdatedEventArgs args, Action<ParsedWhoopPacket> raiseEvent, string characteristicName)
+    {
+        string rawDataHex = BitConverter.ToString(args.Characteristic.Value);
+        // Console.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex} (From Char: {args.Characteristic.Id})"); // Logged by MainPage now if needed
+        // Debug.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex}");
+
+        if (ParsedWhoopPacket.TryParse(args.Characteristic.Value, out var parsedPacket))
+        {
+            // Successfully parsed and CRCs are valid
+            Console.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Count}");
+            Debug.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Count}");
+            raiseEvent?.Invoke(parsedPacket);
+        }
+        else
+        {
+            // Parsing failed or CRCs are invalid
+            Console.WriteLine($"[WhoopDevice PARSE FAILED {characteristicName}]: Error={parsedPacket.Error}, Msg='{parsedPacket.ErrorMessage}'. Raw={rawDataHex}");
+            Debug.WriteLine($"[WhoopDevice PARSE FAILED {characteristicName}]: Error={parsedPacket.Error}, Msg='{parsedPacket.ErrorMessage}'. Raw={rawDataHex}");
+            // Optionally, raise a different event for parse errors or pass the partially parsed packet
+        }
+    }
+
+    private void OnDataFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
+    {
+        OnCharacteristicValueUpdated(args, p => DataFromStrapReceived?.Invoke(this, p), "DATA_FROM_STRAP");
+    }
+
+    private void OnCmdFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
+    {
+        OnCharacteristicValueUpdated(args, p => CmdFromStrapReceived?.Invoke(this, p), "CMD_FROM_STRAP");
+    }
+
+    private void OnEventsFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
+    {
+        OnCharacteristicValueUpdated(args, p => EventsFromStrapReceived?.Invoke(this, p), "EVENTS_FROM_STRAP");
     }
 
     private async Task SubscribeToCharacteristic(ICharacteristic characteristic, EventHandler<CharacteristicUpdatedEventArgs> handler, string name, CancellationToken cancellationToken)
@@ -229,7 +282,7 @@ public class WhoopDevice : IDisposable
 
     private async Task UnsubscribeFromCharacteristic(ICharacteristic characteristic, EventHandler<CharacteristicUpdatedEventArgs> handler, string name)
     {
-        if (characteristic != null )
+        if (characteristic != null)
         {
             try
             {
@@ -244,29 +297,29 @@ public class WhoopDevice : IDisposable
         }
     }
 
-    private void OnDataFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
-    {
-        string message = $"[WhoopDevice INTERNAL RAW DATA_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
-        Console.WriteLine(message);
-        Debug.WriteLine(message);
-        DataFromStrapReceived?.Invoke(this, args.Characteristic.Value);
-    }
+    //private void OnDataFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
+    //{
+    //    string message = $"[WhoopDevice INTERNAL RAW DATA_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
+    //    Console.WriteLine(message);
+    //    Debug.WriteLine(message);
+    //    DataFromStrapReceived?.Invoke(this, args.Characteristic.Value);
+    //}
 
-    private void OnCmdFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
-    {
-        string message = $"[WhoopDevice INTERNAL RAW CMD_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
-        Console.WriteLine(message);
-        Debug.WriteLine(message);
-        CmdFromStrapReceived?.Invoke(this, args.Characteristic.Value);
-    }
+    //private void OnCmdFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
+    //{
+    //    string message = $"[WhoopDevice INTERNAL RAW CMD_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
+    //    Console.WriteLine(message);
+    //    Debug.WriteLine(message);
+    //    CmdFromStrapReceived?.Invoke(this, args.Characteristic.Value);
+    //}
 
-    private void OnEventsFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
-    {
-        string message = $"[WhoopDevice INTERNAL RAW EVENTS_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
-        Console.WriteLine(message);
-        Debug.WriteLine(message);
-        EventsFromStrapReceived?.Invoke(this, args.Characteristic.Value);
-    }
+    //private void OnEventsFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
+    //{
+    //    string message = $"[WhoopDevice INTERNAL RAW EVENTS_FROM_STRAP]: {BitConverter.ToString(args.Characteristic.Value)} (From Char: {args.Characteristic.Id})";
+    //    Console.WriteLine(message);
+    //    Debug.WriteLine(message);
+    //    EventsFromStrapReceived?.Invoke(this, args.Characteristic.Value);
+    //}
 
     public async Task<bool> SendCommandAsync(byte[] commandData, CancellationToken cancellationToken = default)
     {
