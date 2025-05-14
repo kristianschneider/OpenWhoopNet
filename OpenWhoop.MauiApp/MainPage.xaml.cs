@@ -218,11 +218,7 @@ namespace OpenWhoop.MauiApp
             LogToConsole($"Requesting historical HR data from: {_historicalSyncStartTime:yyyy-MM-dd HH:mm:ss} UTC (Unix: {startTimestampUnix})");
             LogToConsole($"Window ends at: {_historicalSyncEndTime:yyyy-MM-dd HH:mm:ss} UTC (Unix: {(uint)_historicalSyncEndTime.ToUnixTimeSeconds()})");
 
-
-            LogToConsole("Sending SetReadPointer command...");
-            var pb = new WhoopPacketBuilder();
-            byte[] setPointerPacket = pb.SetReadPointer(startTimestampUnix);
-            bool pointerSent = await _connectedWhoopDevice.SendCommandAsync(setPointerPacket);
+            bool pointerSent = await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.SetReadPointer(startTimestampUnix));
             if (!pointerSent)
             {
                 LogToConsole("Failed to send SetReadPointer command.");
@@ -232,9 +228,7 @@ namespace OpenWhoop.MauiApp
             await Task.Delay(500); // Give strap a moment to process
 
             LogToConsole("Sending SendHistoricalData(start: true) command...");
-            var pb2 = new WhoopPacketBuilder();
-            byte[] startSyncPacket = pb2.SendHistoricalData(true);
-            bool syncStarted = await _connectedWhoopDevice.SendCommandAsync(startSyncPacket);
+            bool syncStarted = await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.SendHistoricalData(true));
 
             if (syncStarted)
             {
@@ -247,7 +241,7 @@ namespace OpenWhoop.MauiApp
                 LogToConsole("Failed to send SendHistoricalData(true) command.");
                 _isHistoricalSyncActive = false;
             }
-            UpdateCommandButtonsState(true); // Re-evaluate button states
+            UpdateCommandButtonsState(true);
         }
         private async void OnGetBatteryLevelClicked(object sender, EventArgs e)
         {
@@ -288,7 +282,7 @@ namespace OpenWhoop.MauiApp
         }
         private void OnDataFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]
         {
-            LogToConsole($"[MainPage DATA_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
+            //LogToConsole($"[MainPage DATA_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
             if (!packet.IsValid)
             {
                 LogToConsole($"[MainPage DATA_FROM_STRAP] Invalid packet received: {packet.ErrorMessage}");
@@ -296,88 +290,90 @@ namespace OpenWhoop.MauiApp
             }
 
             LogToConsole($"[MainPage DATA_FROM_STRAP]: Type={packet.PacketType}, Cmd/Evt={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Length}");
-
-            if (packet.PacketType == PacketType.RealtimeData)
+            switch (packet.PacketType)
             {
-                LogToConsole("[MainPage DATA_FROM_STRAP] Received RealtimeData packet.");
-                if (packet.Payload.Length >= 1)
-                {
-                    byte heartRate = packet.Payload[5];
-                    LogToConsole($"--- HEART RATE (RealtimeData): {heartRate} bpm ---");
-                    MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: HR: {heartRate} bpm");
-                }
-                else
-                {
-                    LogToConsole("RealtimeData packet has insufficient payload length.");
-                }
-            }
-            else if (packet.PacketType == PacketType.HistoricalData)
-            {
-                LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Length}");
-                if (!_isHistoricalSyncActive)
-                {
-                    LogToConsole("Received HistoricalData but sync is not marked active. Ignoring.");
-                    return;
-                }
+                case PacketType.RealtimeData:
+                    LogToConsole("[MainPage DATA_FROM_STRAP] Received RealtimeData packet.");
+                    if (packet.Payload.Length >= 1)
+                    {
+                        byte heartRate = packet.Payload[5];
+                        LogToConsole($"--- HEART RATE (RealtimeData): {heartRate} bpm ---");
+                        MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: HR: {heartRate} bpm");
+                    }
+                    else
+                    {
+                        LogToConsole("RealtimeData packet has insufficient payload length.");
+                    }
 
-                const int recordSize = 5; // 4 for timestamp, 1 for HR
-                int numRecordsProcessed = 0;
+                    break;
+                case PacketType.HistoricalData:
+                    LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Length}");
+                    if (!_isHistoricalSyncActive)
+                    {
+                        LogToConsole("Received HistoricalData but sync is not marked active. Ignoring.");
+                        return;
+                    }
 
-                int currentOffsetInPayload = 0;
-                while (currentOffsetInPayload + recordSize <= packet.Payload.Length)
-                {
-                    //uint recordTimestampUnix = BitConverter.ToUInt32(packet.Payload.Array, packet.Payload.Offset + currentOffsetInPayload);
-                    //byte hr = packet.Payload.Array[packet.Payload.Offset + currentOffsetInPayload + 4];
-                    //DateTimeOffset recordTime = DateTimeOffset.FromUnixTimeSeconds(recordTimestampUnix);
+                    const int recordSize = 5; // 4 for timestamp, 1 for HR
+                    int numRecordsProcessed = 0;
 
-                    //LogToConsole($"  Raw Historical Record: TimestampUnix={recordTimestampUnix} ({recordTime:yyyy-MM-dd HH:mm:ss} UTC), HR={hr}");
+                    int currentOffsetInPayload = 0;
+                    while (currentOffsetInPayload + recordSize <= packet.Payload.Length)
+                    {
+                        //uint recordTimestampUnix = BitConverter.ToUInt32(packet.Payload.Array, packet.Payload.Offset + currentOffsetInPayload);
+                        //byte hr = packet.Payload.Array[packet.Payload.Offset + currentOffsetInPayload + 4];
+                        //DateTimeOffset recordTime = DateTimeOffset.FromUnixTimeSeconds(recordTimestampUnix);
 
-                    //if (recordTime >= _historicalSyncStartTime && recordTime < _historicalSyncEndTime)
-                    //{
-                    //    LogToConsole($"    VALID (in window): HR: {hr} at {recordTime:HH:mm:ss}");
-                    //    numRecordsProcessed++;
-                    //}
-                    //else if (recordTime >= _historicalSyncEndTime)
-                    //{
-                    //    LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEYOND sync window end time. Requesting abort.");
-                    //    MainThread.BeginInvokeOnMainThread(async () =>
-                    //    {
-                    //        //  await AbortHistoricalSyncIfNeeded(); // Implement this method if needed
-                    //    });
-                    //    _isHistoricalSyncActive = false; // Stop sync as we are past the window
-                    //    StatusLabel.Text = "Status: Historical sync window ended.";
-                    //    LogToConsole("Historical sync stopped: data beyond end time.");
-                    //    // Consider sending AbortHistoricalTransmits command here
-                    //    // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits();
-                    //    // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
-                    //    break;
-                    //}
-                    //else
-                    //{
-                    //    LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEFORE sync window start time. Skipping.");
-                    //}
-                    currentOffsetInPayload += recordSize;
-                }
+                        //LogToConsole($"  Raw Historical Record: TimestampUnix={recordTimestampUnix} ({recordTime:yyyy-MM-dd HH:mm:ss} UTC), HR={hr}");
 
-                if (numRecordsProcessed > 0)
-                {
-                    MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: Got {numRecordsProcessed} historical HR.");
-                }
-                if (currentOffsetInPayload < packet.Payload.Length && packet.Payload.Length > 0) // Check for partial record
-                {
-                    LogToConsole($"  Warning: Partial historical record at end of payload. Remaining bytes: {packet.Payload.Length - currentOffsetInPayload}");
-                }
-                // If no records were processed and we are still active, it might be the end of data or an empty packet.
-                // The strap might send an empty HistoricalData packet to signify end of transmission.
-                // Check openwhoop behavior for how it detects end of historical sync.
-                if (packet.Payload.Length == 0 && _isHistoricalSyncActive)
-                {
-                    LogToConsole("Received empty HistoricalData packet. Assuming end of sync.");
-                    _isHistoricalSyncActive = false;
-                    StatusLabel.Text = "Status: Historical sync complete (empty packet).";
-                    // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits(); // Good practice to send abort
-                    // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
-                }
+                        //if (recordTime >= _historicalSyncStartTime && recordTime < _historicalSyncEndTime)
+                        //{
+                        //    LogToConsole($"    VALID (in window): HR: {hr} at {recordTime:HH:mm:ss}");
+                        //    numRecordsProcessed++;
+                        //}
+                        //else if (recordTime >= _historicalSyncEndTime)
+                        //{
+                        //    LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEYOND sync window end time. Requesting abort.");
+                        //    MainThread.BeginInvokeOnMainThread(async () =>
+                        //    {
+                        //        //  await AbortHistoricalSyncIfNeeded(); // Implement this method if needed
+                        //    });
+                        //    _isHistoricalSyncActive = false; // Stop sync as we are past the window
+                        //    StatusLabel.Text = "Status: Historical sync window ended.";
+                        //    LogToConsole("Historical sync stopped: data beyond end time.");
+                        //    // Consider sending AbortHistoricalTransmits command here
+                        //    // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits();
+                        //    // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
+                        //    break;
+                        //}
+                        //else
+                        //{
+                        //    LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEFORE sync window start time. Skipping.");
+                        //}
+                        currentOffsetInPayload += recordSize;
+                        break;
+                    }
+
+                    if (numRecordsProcessed > 0)
+                    {
+                        MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: Got {numRecordsProcessed} historical HR.");
+                    }
+                    if (currentOffsetInPayload < packet.Payload.Length && packet.Payload.Length > 0) // Check for partial record
+                    {
+                        LogToConsole($"  Warning: Partial historical record at end of payload. Remaining bytes: {packet.Payload.Length - currentOffsetInPayload}");
+                    }
+                    // If no records were processed and we are still active, it might be the end of data or an empty packet.
+                    // The strap might send an empty HistoricalData packet to signify end of transmission.
+                    // Check openwhoop behavior for how it detects end of historical sync.
+                    if (packet.Payload.Length == 0 && _isHistoricalSyncActive)
+                    {
+                        LogToConsole("Received empty HistoricalData packet. Assuming end of sync.");
+                        _isHistoricalSyncActive = false;
+                        StatusLabel.Text = "Status: Historical sync complete (empty packet).";
+                        // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits(); // Good practice to send abort
+                        // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
+                    }
+                    break;
             }
         }
         private void OnEventsFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]

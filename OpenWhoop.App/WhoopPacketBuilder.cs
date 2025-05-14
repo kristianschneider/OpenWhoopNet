@@ -163,7 +163,7 @@ namespace OpenWhoop.App
             return CreateCommandPacket(CommandNumber.SetClock, payload);
         }
 
-        public byte[] SetReadPointer(uint pointerTimestamp)
+        public static byte[] SetReadPointer(uint pointerTimestamp)
         {
             // Assuming pointerTimestamp is a Unix timestamp (seconds since epoch)
             // Payload is typically 4 bytes, little-endian
@@ -175,7 +175,7 @@ namespace OpenWhoop.App
             return CreateCommandPacket(CommandNumber.SetReadPointer, payload);
         }
 
-        public byte[] SendHistoricalData(bool start)
+        public static byte[] SendHistoricalData(bool start)
         {
             // Assuming a simple 1-byte payload: 0x01 to start, 0x00 to stop (though Abort might be better for stop)
             // This is a guess; the actual payload might be more complex (e.g., specifying range, type of data)
