@@ -100,7 +100,7 @@ namespace OpenWhoop.App
             return Build(PacketType.Command, 0, (byte)command, payload);
         }
 
-        public byte[] EnterHighFreqSync()
+        public static byte[] EnterHighFreqSync()
         {
             return Build(
                 PacketType.Command, // Assuming your C# PacketType enum
@@ -110,7 +110,7 @@ namespace OpenWhoop.App
             );
         }
 
-        public byte[] ExitHighFreqSync()
+        public static byte[] ExitHighFreqSync()
         {
             return Build(
                 PacketType.Command, // Assuming your C# PacketType enum

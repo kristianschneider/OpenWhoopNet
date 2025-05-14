@@ -1,9 +1,10 @@
 ﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Maui.Storage;
 using OpenWhoop.App.Services;
 using OpenWhoop.Core.Data;
+using SkiaSharp.Views.Maui.Controls.Hosting;
+using LiveChartsCore.SkiaSharpView.Maui;
+
 
 namespace OpenWhoop.MauiApp
 {
@@ -14,6 +15,8 @@ namespace OpenWhoop.MauiApp
             var builder = Microsoft.Maui.Hosting.MauiApp.CreateBuilder();
             builder
                 .UseMauiApp<App>()
+                .UseSkiaSharp()
+                .UseLiveCharts()
                 .ConfigureFonts(fonts =>
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");

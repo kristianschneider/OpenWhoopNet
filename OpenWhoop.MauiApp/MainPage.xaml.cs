@@ -11,6 +11,9 @@ using Microsoft.EntityFrameworkCore;
 using OpenWhoop.App; // For WhoopDevice, WhoopPacketBuilder, Enums
 using System.Linq;
 using System.Text;
+using LiveChartsCore;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Drawing.Geometries;
 using OpenWhoop.App.Protocol;
 using OpenWhoop.Core.Entities;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +47,14 @@ namespace OpenWhoop.MauiApp
             }
         }
 
+        public ISeries[] Series { get; set; } = [
+            new LineSeries<double>
+            {
+                Values = [2, 1, 3, 5, 3, 4, 6,3,4,5,7,5,3,6,4,2,3,2,4,5,6,7,8,8,9,9,8,56,4,4,3,3,3,2],
+                Fill = null,
+                GeometrySize = 5
+            }
+        ];
         public MainPage(DbService dbService)
         {
             InitializeComponent();
@@ -475,6 +486,9 @@ namespace OpenWhoop.MauiApp
         {
             if (_connectedWhoopDevice != null)
             {
+                await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.ExitHighFreqSync());
+                await Task.Delay(1000); // Wait a moment to ensure the command is sent
+
                 LogToConsole($"Disconnecting from {_connectedWhoopDevice.Name}...");
                 StatusLabel.Text = $"Status: Disconnecting from {_connectedWhoopDevice.Name}...";
                 _connectedWhoopDevice.DataFromStrapReceived -= OnDataFromStrapReceivedHandler;
@@ -523,6 +537,11 @@ namespace OpenWhoop.MauiApp
         private async void OnMainPageDisappearing(object? sender, EventArgs e)
         {
             LogToConsole("MainPage disappearing. Cleaning up resources.");
+            if (_connectedWhoopDevice != null)
+            {
+                await DisconnectCurrentDevice();
+                _connectedWhoopDevice = null;
+            }
             if (_btService != null)
             {
                 await _btService.StopScanAsync();

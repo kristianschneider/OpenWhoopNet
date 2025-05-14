@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using OpenWhoop.App.Protocol;
+using System.Threading;
 
 namespace OpenWhoop.App;
 
@@ -188,10 +189,8 @@ public class WhoopDevice : IDisposable
 
             // --- Add EnterHighFreqSync command ---
             Debug.WriteLine("[WhoopDevice] Sending EnterHighFreqSync command...");
-            var pb = new WhoopPacketBuilder();
-            byte[] highFreqSyncPacket = pb.EnterHighFreqSync();
-            //[170, 7, 0, 107, 35, 0, 97, 101, 112, 255, 255]
-            bool sentHighFreqSync = await SendCommandAsync(highFreqSyncPacket, cancellationToken);
+            
+            bool sentHighFreqSync = await SendCommandAsync(WhoopPacketBuilder.EnterHighFreqSync(), cancellationToken);
             if (sentHighFreqSync)
             {
                 Console.WriteLine("[WhoopDevice] EnterHighFreqSync command sent successfully.");
