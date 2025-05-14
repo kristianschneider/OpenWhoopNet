@@ -185,7 +185,6 @@ namespace OpenWhoop.MauiApp
         }
         private void UpdateCommandButtonsState(bool isEnabled)
         {
-            GetHello.IsEnabled = isEnabled;
             ToggleHrOnButton.IsEnabled = isEnabled;
             ToggleHrOffButton.IsEnabled = isEnabled;
             //AbortHistoricalButton.IsEnabled = isEnabled;
@@ -292,7 +291,7 @@ namespace OpenWhoop.MauiApp
                 LogToConsole("[MainPage DATA_FROM_STRAP] Received RealtimeData packet.");
                 if (packet.Payload.Length >= 1)
                 {
-                    byte heartRate = packet.Payload[2];
+                    byte heartRate = packet.Payload[5];
                     LogToConsole($"--- HEART RATE (RealtimeData): {heartRate} bpm ---");
                     MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: HR: {heartRate} bpm");
                 }
