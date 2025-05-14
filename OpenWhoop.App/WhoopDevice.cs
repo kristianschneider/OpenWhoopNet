@@ -225,8 +225,8 @@ public class WhoopDevice : IDisposable
         if (ParsedWhoopPacket.TryParse(args.Characteristic.Value, out var parsedPacket))
         {
             // Successfully parsed and CRCs are valid
-            Console.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Count}");
-            Debug.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Count}");
+            Console.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Length}");
+            Debug.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Length}");
             raiseEvent?.Invoke(parsedPacket);
         }
         else

@@ -126,7 +126,7 @@ namespace OpenWhoop.App
                 PacketType.Command, // Assuming your C# PacketType enum
                 0,
                 (byte)CommandNumber.GetBatteryLevel, // Assuming your C# CommandNumber enum
-                new byte[0] // No payload
+                [0x00]
             );
         }
 
@@ -136,7 +136,7 @@ namespace OpenWhoop.App
                 PacketType.Command, // Assuming your C# PacketType enum
                 0,
                 (byte)CommandNumber.GetHelloHarvard, // Assuming your C# CommandNumber enum
-                new byte[] { 0x00 }
+                [0x00]
             );
         }
 

@@ -23,7 +23,7 @@ namespace OpenWhoop.MauiApp
         private BluetoothService _btService;
         public ObservableCollection<DiscoveredDeviceInfo> Devices => _btService?.DiscoveredDevices;
 
-        private WhoopDevice _connectedWhoopDevice;
+        private WhoopDevice? _connectedWhoopDevice;
         private DbService _dbService;
         private AppDbContext _dbContext;
         private bool _isHistoricalSyncActive = false;
@@ -39,7 +39,7 @@ namespace OpenWhoop.MauiApp
                 if (_consoleOutput != value)
                 {
                     _consoleOutput = value;
-                    OnPropertyChanged(nameof(ConsoleOutput));
+                    OnPropertyChanged();
                 }
             }
         }
@@ -53,7 +53,21 @@ namespace OpenWhoop.MauiApp
             BindingContext = this;
             this.Disappearing += OnMainPageDisappearing;
             UpdateCommandButtonsState(false); // Initially disable all command buttons
-            StatusLabel.Text = "Status: Ready. Scan for devices.";
+
+        }
+
+        private void SetBatteryLevel(int percent)
+        {
+            percent = Math.Clamp(percent, 0, 100);
+            double fillWidth = 40 * percent / 100.0;
+            BatteryFill.WidthRequest = fillWidth;
+            BatteryLabel.Text = $"{percent}%";
+            if (percent > 50)
+                BatteryFill.Color = Colors.LimeGreen;
+            else if (percent > 20)
+                BatteryFill.Color = Colors.Gold;
+            else
+                BatteryFill.Color = Colors.Red;
         }
 
         private async void OnScanClicked(object sender, EventArgs e)
@@ -230,16 +244,8 @@ namespace OpenWhoop.MauiApp
             if (!IsDeviceConnectedAndReady()) return;
             LogToConsole("Sending GetBatteryLevel command...");
             byte[] packet = WhoopPacketBuilder.GetBatteryLevel();
-            bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
+            bool sent = await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.GetBatteryLevel());
             LogToConsole(sent ? "GetBatteryLevel command sent." : "Failed to send GetBatteryLevel command.");
-        }
-        private async void OnGetHelloClicked(object sender, EventArgs e)
-        {
-            if (!IsDeviceConnectedAndReady()) return;
-            LogToConsole("Sending GetHello command...");
-            byte[] packet = WhoopPacketBuilder.GetHelloHarvard();
-            bool sent = await _connectedWhoopDevice.SendCommandAsync(packet);
-            LogToConsole(sent ? "GetHello command sent." : "Failed to send GetHello command.");
         }
         private async void OnToggleRealtimeHrOnClicked(object sender, EventArgs e)
         {
@@ -279,14 +285,14 @@ namespace OpenWhoop.MauiApp
                 return;
             }
 
-            LogToConsole($"[MainPage DATA_FROM_STRAP]: Type={packet.PacketType}, Cmd/Evt={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Count}");
+            LogToConsole($"[MainPage DATA_FROM_STRAP]: Type={packet.PacketType}, Cmd/Evt={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Length}");
 
             if (packet.PacketType == PacketType.RealtimeData)
             {
                 LogToConsole("[MainPage DATA_FROM_STRAP] Received RealtimeData packet.");
-                if (packet.Payload.Count >= 1)
+                if (packet.Payload.Length >= 1)
                 {
-                    byte heartRate = packet.Payload.Array[packet.Payload.Offset];
+                    byte heartRate = packet.Payload[2];
                     LogToConsole($"--- HEART RATE (RealtimeData): {heartRate} bpm ---");
                     MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: HR: {heartRate} bpm");
                 }
@@ -297,7 +303,7 @@ namespace OpenWhoop.MauiApp
             }
             else if (packet.PacketType == PacketType.HistoricalData)
             {
-                LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Count}");
+                LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Length}");
                 if (!_isHistoricalSyncActive)
                 {
                     LogToConsole("Received HistoricalData but sync is not marked active. Ignoring.");
@@ -308,38 +314,38 @@ namespace OpenWhoop.MauiApp
                 int numRecordsProcessed = 0;
 
                 int currentOffsetInPayload = 0;
-                while (currentOffsetInPayload + recordSize <= packet.Payload.Count)
+                while (currentOffsetInPayload + recordSize <= packet.Payload.Length)
                 {
-                    uint recordTimestampUnix = BitConverter.ToUInt32(packet.Payload.Array, packet.Payload.Offset + currentOffsetInPayload);
-                    byte hr = packet.Payload.Array[packet.Payload.Offset + currentOffsetInPayload + 4];
-                    DateTimeOffset recordTime = DateTimeOffset.FromUnixTimeSeconds(recordTimestampUnix);
+                    //uint recordTimestampUnix = BitConverter.ToUInt32(packet.Payload.Array, packet.Payload.Offset + currentOffsetInPayload);
+                    //byte hr = packet.Payload.Array[packet.Payload.Offset + currentOffsetInPayload + 4];
+                    //DateTimeOffset recordTime = DateTimeOffset.FromUnixTimeSeconds(recordTimestampUnix);
 
-                    LogToConsole($"  Raw Historical Record: TimestampUnix={recordTimestampUnix} ({recordTime:yyyy-MM-dd HH:mm:ss} UTC), HR={hr}");
+                    //LogToConsole($"  Raw Historical Record: TimestampUnix={recordTimestampUnix} ({recordTime:yyyy-MM-dd HH:mm:ss} UTC), HR={hr}");
 
-                    if (recordTime >= _historicalSyncStartTime && recordTime < _historicalSyncEndTime)
-                    {
-                        LogToConsole($"    VALID (in window): HR: {hr} at {recordTime:HH:mm:ss}");
-                        numRecordsProcessed++;
-                    }
-                    else if (recordTime >= _historicalSyncEndTime)
-                    {
-                        LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEYOND sync window end time. Requesting abort.");
-                        MainThread.BeginInvokeOnMainThread(async () =>
-                        {
-                            //  await AbortHistoricalSyncIfNeeded(); // Implement this method if needed
-                        });
-                        _isHistoricalSyncActive = false; // Stop sync as we are past the window
-                        StatusLabel.Text = "Status: Historical sync window ended.";
-                        LogToConsole("Historical sync stopped: data beyond end time.");
-                        // Consider sending AbortHistoricalTransmits command here
-                        // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits();
-                        // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
-                        break;
-                    }
-                    else
-                    {
-                        LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEFORE sync window start time. Skipping.");
-                    }
+                    //if (recordTime >= _historicalSyncStartTime && recordTime < _historicalSyncEndTime)
+                    //{
+                    //    LogToConsole($"    VALID (in window): HR: {hr} at {recordTime:HH:mm:ss}");
+                    //    numRecordsProcessed++;
+                    //}
+                    //else if (recordTime >= _historicalSyncEndTime)
+                    //{
+                    //    LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEYOND sync window end time. Requesting abort.");
+                    //    MainThread.BeginInvokeOnMainThread(async () =>
+                    //    {
+                    //        //  await AbortHistoricalSyncIfNeeded(); // Implement this method if needed
+                    //    });
+                    //    _isHistoricalSyncActive = false; // Stop sync as we are past the window
+                    //    StatusLabel.Text = "Status: Historical sync window ended.";
+                    //    LogToConsole("Historical sync stopped: data beyond end time.");
+                    //    // Consider sending AbortHistoricalTransmits command here
+                    //    // byte[] abortPacket = WhoopPacketBuilder.AbortHistoricalTransmits();
+                    //    // await _connectedWhoopDevice.SendCommandAsync(abortPacket);
+                    //    break;
+                    //}
+                    //else
+                    //{
+                    //    LogToConsole($"    Record timestamp {recordTime:HH:mm:ss} is BEFORE sync window start time. Skipping.");
+                    //}
                     currentOffsetInPayload += recordSize;
                 }
 
@@ -347,14 +353,14 @@ namespace OpenWhoop.MauiApp
                 {
                     MainThread.BeginInvokeOnMainThread(() => StatusLabel.Text = $"Status: Got {numRecordsProcessed} historical HR.");
                 }
-                if (currentOffsetInPayload < packet.Payload.Count && packet.Payload.Count > 0) // Check for partial record
+                if (currentOffsetInPayload < packet.Payload.Length && packet.Payload.Length > 0) // Check for partial record
                 {
-                    LogToConsole($"  Warning: Partial historical record at end of payload. Remaining bytes: {packet.Payload.Count - currentOffsetInPayload}");
+                    LogToConsole($"  Warning: Partial historical record at end of payload. Remaining bytes: {packet.Payload.Length - currentOffsetInPayload}");
                 }
                 // If no records were processed and we are still active, it might be the end of data or an empty packet.
                 // The strap might send an empty HistoricalData packet to signify end of transmission.
                 // Check openwhoop behavior for how it detects end of historical sync.
-                if (packet.Payload.Count == 0 && _isHistoricalSyncActive)
+                if (packet.Payload.Length == 0 && _isHistoricalSyncActive)
                 {
                     LogToConsole("Received empty HistoricalData packet. Assuming end of sync.");
                     _isHistoricalSyncActive = false;
@@ -373,7 +379,7 @@ namespace OpenWhoop.MauiApp
                 return;
             }
 
-            LogToConsole($"[MainPage EVENTS_FROM_STRAP]: Type={packet.PacketType}, EventNum={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Count}");
+            LogToConsole($"[MainPage EVENTS_FROM_STRAP]: Type={packet.PacketType}, EventNum={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Length}");
 
             if (packet.PacketType == PacketType.Event)
             {
@@ -382,9 +388,9 @@ namespace OpenWhoop.MauiApp
 
                 if (eventNumber == EventNumber.BatteryLevel)
                 {
-                    if (packet.Payload.Count >= 1)
+                    if (packet.Payload.Length >= 1)
                     {
-                        byte batteryLevelValue = packet.Payload.Array[packet.Payload.Offset];
+                        byte batteryLevelValue = packet.Payload[2];
                         LogToConsole($"Battery Level Event: {batteryLevelValue}%");
                         MainThread.BeginInvokeOnMainThread(async () =>
                         {
@@ -421,7 +427,7 @@ namespace OpenWhoop.MauiApp
                 return;
             }
 
-            LogToConsole($"[MainPage CMD_FROM_STRAP]: Type={packet.PacketType}, OrigCmd={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Count}");
+            LogToConsole($"[MainPage CMD_FROM_STRAP]: Type={packet.PacketType}, OrigCmd={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Length}");
 
             if (packet.PacketType == PacketType.CommandResponse)
             {
@@ -431,15 +437,11 @@ namespace OpenWhoop.MauiApp
                 switch (originalCommand)
                 {
                     case CommandNumber.GetBatteryLevel:
-                        if (packet.Payload.Count >= 1)
+                        if (packet.Payload.Length >= 1)
                         {
-                            byte batteryLevel = packet.Payload.Array[packet.Payload.Offset];
+                            byte batteryLevel = packet.Payload[2];
                             LogToConsole($"Battery Level (from CommandResponse): {batteryLevel}%");
-                            MainThread.BeginInvokeOnMainThread(async () =>
-                            {
-                                StatusLabel.Text = $"Status: Battery: {batteryLevel}%";
-                                await DisplayAlert("Battery Level", $"Strap Battery (CMD_RESP): {batteryLevel}%", "OK");
-                            });
+                            MainThread.BeginInvokeOnMainThread(async () => { SetBatteryLevel(batteryLevel); });
                         }
                         else
                         {
@@ -519,7 +521,7 @@ namespace OpenWhoop.MauiApp
             });
             System.Diagnostics.Debug.WriteLine(message);
         }
-        private async void OnMainPageDisappearing(object sender, EventArgs e)
+        private async void OnMainPageDisappearing(object? sender, EventArgs e)
         {
             LogToConsole("MainPage disappearing. Cleaning up resources.");
             if (_btService != null)
@@ -579,7 +581,7 @@ namespace OpenWhoop.MauiApp
                     {
                         LogToConsole($"Reconnected to {saved.DeviceName}. Ready for commands.");
                         UpdateCommandButtonsState(true);
-                        StatusLabel.Text = $"Status: Connected to {saved.DeviceName}.";
+                        await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.GetBatteryLevel());
                     }
                     else
                     {

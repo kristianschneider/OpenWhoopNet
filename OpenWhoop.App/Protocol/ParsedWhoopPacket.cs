@@ -28,7 +28,6 @@ namespace OpenWhoop.App.Protocol
         public string ErrorMessage { get; private set; }
 
         public byte SOF { get; private set; }
-        public byte DeclaredLengthByte { get; private set; }
         public byte HeaderCRC { get; private set; }
         public byte CalculatedHeaderCRC { get; private set; }
         public bool IsHeaderCrcValid => HeaderCRC == CalculatedHeaderCRC;
@@ -36,16 +35,13 @@ namespace OpenWhoop.App.Protocol
         public byte Sequence { get; private set; }
         public PacketType PacketType { get; private set; }
         public byte CommandOrEventNumber { get; private set; }
-        public ArraySegment<byte> Payload { get; private set; }
-        public byte PayloadCRC { get; private set; }
-        public byte CalculatedPayloadCRC { get; private set; }
-        public bool IsPayloadCrcValid => PayloadCRC == CalculatedPayloadCRC;
+        public byte[] Payload { get; private set; }
 
         
         private ParsedWhoopPacket()
         {
             RawData = Array.Empty<byte>();
-            Payload = new ArraySegment<byte>();
+            Payload = Array.Empty<byte>();
         }
 
 
@@ -112,9 +108,14 @@ namespace OpenWhoop.App.Protocol
 
             // and the actual payload is the remainder:
             int payloadLength = pktLen - 3;   // pktLen minus the 3 header bytes
-            packet.Payload = new ArraySegment<byte>(rawData,
-                offset + 3,
-                payloadLength);
+            //copy rawdata into payload from offset + 3 to payloadLength
+           
+                packet.Payload = new byte[payloadLength];
+                Array.Copy(rawData, offset + 3, packet.Payload, 0, payloadLength);
+           
+            //packet.Payload = new ArraySegment<byte>(rawData,
+            //    offset + 3,
+            //    payloadLength);
 
             packet.IsValid = true;
             return true;

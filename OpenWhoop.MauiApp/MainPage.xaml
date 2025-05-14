@@ -2,13 +2,42 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="OpenWhoop.MauiApp.MainPage"
-             Title="OpenWhoop MAUI (HR Test)">
+             Title="OpenWhoop"
+             NavigationPage.HasNavigationBar="False">
 
-    <Grid RowDefinitions="Auto, Auto, Auto, *, Auto" ColumnDefinitions="*" Padding="10">
+    <Grid RowDefinitions="Auto, Auto, Auto, Auto, *, Auto" ColumnDefinitions="*" Padding="10">
 
-        <Button Grid.Row="0" Text="Scan for Devices" x:Name ="ScanButton"  Clicked="OnScanClicked" Margin="0,0,0,10"/>
+        <!-- Custom Title Bar -->
+        <Grid Grid.Row="0" HeightRequest="40" ColumnDefinitions="*,Auto" VerticalOptions="Start" Margin="0,0,0,10">
+            <Label Text="OpenWhoop" FontAttributes="Bold" FontSize="20" VerticalOptions="Center"/>
+            <Grid WidthRequest="48" HeightRequest="24" VerticalOptions="Center" Margin="10,0,0,0" Grid.Column="1">
+                <!-- Battery fill (dynamic width) -->
+                <BoxView x:Name="BatteryFill"
+                         Color="LimeGreen"
+                         HorizontalOptions="Start"
+                         VerticalOptions="Fill"
+                         HeightRequest="16"
+                         WidthRequest="40"
+                         Margin="2,4,0,4"
+                         CornerRadius="3"/>
+                <!-- Battery outline SVG -->
+                <Image Source="battery_outline.svg"
+                       Aspect="AspectFit"
+                       WidthRequest="48"
+                       HeightRequest="24"/>
+                <!-- Battery percentage label (optional) -->
+                <Label x:Name="BatteryLabel"
+                       Text="100%"
+                       FontSize="12"
+                       TextColor="White"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"/>
+            </Grid>
+        </Grid>
 
-        <ListView Grid.Row="1" ItemsSource="{Binding Devices}" ItemSelected="OnDeviceSelected" Margin="0,0,0,10" MaximumHeightRequest="200">
+        <Button Grid.Row="1" Text="Scan for Devices" x:Name ="ScanButton"  Clicked="OnScanClicked" Margin="0,0,0,10"/>
+
+        <ListView Grid.Row="2" ItemsSource="{Binding Devices}" ItemSelected="OnDeviceSelected" Margin="0,0,0,10" MaximumHeightRequest="200">
             <ListView.ItemTemplate>
                 <DataTemplate>
                     <ViewCell>
@@ -22,9 +51,9 @@
         </ListView>
 
         <!-- Add a section for command buttons -->
-        <VerticalStackLayout Grid.Row="2" Spacing="5" Margin="0,0,0,10">
+        <VerticalStackLayout Grid.Row="3" Spacing="5" Margin="0,0,0,10">
             <Label Text="Device Commands:" FontAttributes="Bold"/>
-            <Button Text="Hello harward" Clicked="OnGetHelloClicked" x:Name="GetHello" IsEnabled="False"/>
+            <!--<Button Text="Get bat" Clicked="OnGetBatteryLevelClicked" x:Name="GetHello" IsEnabled="False"/>-->
             <Button Text="Toggle Realtime HR (On)" Clicked="OnToggleRealtimeHrOnClicked" x:Name="ToggleHrOnButton" IsEnabled="False"/>
             <Button Text="Toggle Realtime HR (Off)" Clicked="OnToggleRealtimeHrOffClicked" x:Name="ToggleHrOffButton" IsEnabled="False"/>
             <Button Text="Sync Last 6 Hours HR" Clicked="OnSyncLast6HoursClicked" x:Name="Sync6HoursButton" IsEnabled="False"/>
@@ -32,12 +61,11 @@
             <Button Text="Disconnect" Clicked="OnDisconnectClicked" x:Name="DisconnectButton" IsEnabled="False"/>
         </VerticalStackLayout>
 
-
-        <ScrollView Grid.Row="3" Margin="0,10,0,0">
+        <ScrollView Grid.Row="4" Margin="0,10,0,0">
             <Label Text="{Binding ConsoleOutput}" FontSize="Small" LineBreakMode="WordWrap"/>
         </ScrollView>
 
-        <Label Grid.Row="4" x:Name="StatusLabel" Text="Status: Ready" FontSize="Micro" Margin="0,5,0,0"/>
+        <Label Grid.Row="5" x:Name="StatusLabel" Text="Status: Ready" FontSize="Micro" Margin="0,5,0,0"/>
 
     </Grid>
 </ContentPage>

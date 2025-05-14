@@ -5,11 +5,15 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:local="clr-namespace:OpenWhoop.MauiApp"
     Shell.FlyoutBehavior="Flyout"
-    Title="OpenWhoop.MauiApp">
+    Title="OpenWhoop.MauiApp" ForegroundColor="White">
 
     <ShellContent
         Title="Home"
         ContentTemplate="{DataTemplate local:MainPage}"
-        Route="MainPage" />
+        Route="MainPage" Shell.NavBarIsVisible="False"/>
+    <ShellContent
+        Title="Settings"
+        ContentTemplate="{DataTemplate local:Settings}"
+        Route="Settings" />
 
 </Shell>

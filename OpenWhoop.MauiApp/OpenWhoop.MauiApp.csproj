@@ -70,4 +70,10 @@
 	  <ProjectReference Include="..\OpenWhoop.Core.Entities\OpenWhoop.Core.Entities.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <MauiXaml Update="Settings.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	</ItemGroup>
+
 </Project>
