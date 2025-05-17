@@ -12,13 +12,13 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using OpenWhoop.App.Protocol;
 using System.Threading;
+using OpenWhoop.Core.Entities;
 
 namespace OpenWhoop.App;
 
 public class WhoopDevice : IDisposable
 {
     private readonly IDevice _peripheral;
-    private readonly AppDbContext _dbContext;
     private readonly IAdapter _adapter;
 
     private IService _whoopService;
@@ -26,6 +26,7 @@ public class WhoopDevice : IDisposable
     private ICharacteristic _dataFromStrapCharacteristic;
     private ICharacteristic _cmdFromStrapCharacteristic;
     private ICharacteristic _eventsFromStrapCharacteristic;
+    private ICharacteristic _memfaultCharacteristicGuid;
 
     public event EventHandler<ParsedWhoopPacket> DataFromStrapReceived;
     public event EventHandler<ParsedWhoopPacket> CmdFromStrapReceived;
@@ -37,10 +38,9 @@ public class WhoopDevice : IDisposable
     public DeviceState State => _peripheral.State;
     public DeviceBondState BondState => _peripheral.BondState;
 
-    public WhoopDevice(IDevice peripheral, AppDbContext dbContext)
+    public WhoopDevice(IDevice peripheral)
     {
         _peripheral = peripheral ?? throw new ArgumentNullException(nameof(peripheral));
-        _dbContext = dbContext;
         _adapter = CrossBluetoothLE.Current.Adapter;
 
         Console.WriteLine($"[WhoopDevice] Attaching DeviceDisconnected and DeviceConnectionLost handlers for {Name}");
@@ -169,6 +169,7 @@ public class WhoopDevice : IDisposable
             _dataFromStrapCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.DataFromStrapCharacteristicGuid);
             _cmdFromStrapCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.CmdFromStrapCharacteristicGuid);
             _eventsFromStrapCharacteristic = await _whoopService.GetCharacteristicAsync(WhoopConstants.EventsFromStrapCharacteristicGuid);
+            _memfaultCharacteristicGuid = await _whoopService.GetCharacteristicAsync(WhoopConstants.MemfaultCharacteristicGuid);
 
             bool allFound = true;
             if (_cmdToStrapCharacteristic == null) { Console.WriteLine("[WhoopDevice] CMD_TO_STRAP characteristic not found."); allFound = false; }
@@ -186,10 +187,11 @@ public class WhoopDevice : IDisposable
             await SubscribeToCharacteristic(_dataFromStrapCharacteristic, OnDataFromStrapValueUpdated, "DATA_FROM_STRAP", cancellationToken);
             await SubscribeToCharacteristic(_cmdFromStrapCharacteristic, OnCmdFromStrapValueUpdated, "CMD_FROM_STRAP", cancellationToken);
             await SubscribeToCharacteristic(_eventsFromStrapCharacteristic, OnEventsFromStrapValueUpdated, "EVENTS_FROM_STRAP", cancellationToken);
+            await SubscribeToCharacteristic(_memfaultCharacteristicGuid, OnMemFaultFromStrapValueUpdated, "MF_FROM_STRAP", cancellationToken);
 
             // --- Add EnterHighFreqSync command ---
             Debug.WriteLine("[WhoopDevice] Sending EnterHighFreqSync command...");
-            
+
             bool sentHighFreqSync = await SendCommandAsync(WhoopPacketBuilder.EnterHighFreqSync(), cancellationToken);
             if (sentHighFreqSync)
             {
@@ -218,8 +220,8 @@ public class WhoopDevice : IDisposable
     private void OnCharacteristicValueUpdated(CharacteristicUpdatedEventArgs args, Action<ParsedWhoopPacket> raiseEvent, string characteristicName)
     {
         string rawDataHex = BitConverter.ToString(args.Characteristic.Value);
-         //Console.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex} (From Char: {args.Characteristic.Id})"); // Logged by MainPage now if needed
-         //Debug.WriteLine($"[WhoopDevice INTERNAL RAW {characteristicName}]: {rawDataHex}");
+        //Console.WriteLine("----------Receiving  " + string.Join(",", args.Characteristic.Value.Select(b => b.ToString())));
+
 
         if (ParsedWhoopPacket.TryParse(args.Characteristic.Value, out var parsedPacket))
         {
@@ -252,6 +254,10 @@ public class WhoopDevice : IDisposable
         OnCharacteristicValueUpdated(args, p => EventsFromStrapReceived?.Invoke(this, p), "EVENTS_FROM_STRAP");
     }
 
+    private void OnMemFaultFromStrapValueUpdated(object sender, CharacteristicUpdatedEventArgs args)
+    {
+        OnCharacteristicValueUpdated(args, p => { }, "MF_FROM_STRAP");
+    }
     private async Task SubscribeToCharacteristic(ICharacteristic characteristic, EventHandler<CharacteristicUpdatedEventArgs> handler, string name, CancellationToken cancellationToken)
     {
         if (characteristic != null && characteristic.CanUpdate)
@@ -294,7 +300,7 @@ public class WhoopDevice : IDisposable
             }
         }
     }
-   
+
     public async Task<bool> SendCommandAsync(byte[] commandData, CancellationToken cancellationToken = default)
     {
         if (State != DeviceState.Connected || _cmdToStrapCharacteristic == null)
@@ -309,6 +315,8 @@ public class WhoopDevice : IDisposable
         }
         try
         {
+
+            Console.WriteLine("----------Sending  " + string.Join(",", commandData.Select(b => b.ToString())));
             bool success = await _cmdToStrapCharacteristic.WriteAsync(commandData, cancellationToken) == 0;
             if (!success)
             {

@@ -76,14 +76,12 @@ namespace OpenWhoop.App.Protocol
 
 
 
-            // sanity-check just as you have it:
             if (length < 8 || length > rawData.Length - offset)
             {
                 packet.Error = PacketParseError.DataLengthMismatch;
                 return false;
             }
 
-            // peel out the packet body(packet_type + seq + cmd + payload)
             int pktLen = length - 4;        // drop the trailing CRC32
             if (pktLen < 3)
             {               // need at least packet_type, seq, cmd

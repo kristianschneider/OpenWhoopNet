@@ -11,5 +11,6 @@ namespace OpenWhoop.Core.Entities
         public DateTimeOffset Timestamp { get; set; } // Store as UTC
         public int Value { get; set; } // Heart rate value
         public DateTimeOffset CreatedAt { get; set; } // Store as UTC
+        public List<ushort> RrIntervals { get; set; }
     }
 }

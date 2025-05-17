@@ -93,8 +93,6 @@ namespace OpenWhoop.App
             return table;
         }
 
-
-
         public static byte[] CreateCommandPacket(CommandNumber command, byte[] payload = null)
         {
             return Build(PacketType.Command, 0, (byte)command, payload);
@@ -177,15 +175,23 @@ namespace OpenWhoop.App
 
         public static byte[] SendHistoricalData(bool start)
         {
-            // Assuming a simple 1-byte payload: 0x01 to start, 0x00 to stop (though Abort might be better for stop)
-            // This is a guess; the actual payload might be more complex (e.g., specifying range, type of data)
-            byte[] payload = new byte[] { start ? (byte)0x01 : (byte)0x00 };
+            byte[] payload = new byte[] { 0x00 };
             return CreateCommandPacket(CommandNumber.SendHistoricalData, payload);
         }
 
-        public byte[] AbortHistoricalTransmits()
+        public static byte[] AbortHistoricalTransmits()
         {
             return CreateCommandPacket(CommandNumber.AbortHistoricalTransmits);
+        }
+
+        public static byte[] Reset()
+        {
+            return Build(
+                PacketType.Command, // Assuming your C# PacketType enum
+                0,
+                (byte)CommandNumber.RebootStrap, // Assuming your C# CommandNumber enum
+                [0x00]
+            );
         }
     }
 }

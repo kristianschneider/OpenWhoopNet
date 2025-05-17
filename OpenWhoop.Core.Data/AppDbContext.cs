@@ -1,5 +1,8 @@
 ﻿// filepath: c:\Projects\Open Source\openwhoop\OpenWhoop.Core.Data\AppDbContext.cs
+
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OpenWhoop.Core.Entities; // Make sure this using directive is correct
 
 namespace OpenWhoop.Core.Data
@@ -50,6 +53,11 @@ namespace OpenWhoop.Core.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            var rrIntervalsConverter = new ValueConverter<List<ushort>, string>(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                v => JsonSerializer.Deserialize<List<ushort>>(v, (JsonSerializerOptions)null) ?? new List<ushort>()
+            );
+
             base.OnModelCreating(modelBuilder);
 
             // Packet Configuration
@@ -167,6 +175,10 @@ namespace OpenWhoop.Core.Data
                 entity.Property(e => e.LastConnectedUtc)
                     .HasDefaultValueSql("datetime('now', 'utc')"); // Optional: default to now
             });
+
+            modelBuilder.Entity<HeartRateSample>()
+                .Property(e => e.RrIntervals)
+                .HasConversion(rrIntervalsConverter);
 
         }
 

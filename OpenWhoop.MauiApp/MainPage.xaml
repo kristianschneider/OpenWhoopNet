@@ -58,10 +58,12 @@
             <!--<Button Text="Get bat" Clicked="OnGetBatteryLevelClicked" x:Name="GetHello" IsEnabled="False"/>-->
             <Button Text="Toggle Realtime HR (On)" Clicked="OnToggleRealtimeHrOnClicked" x:Name="ToggleHrOnButton" IsEnabled="False"/>
             <Button Text="Toggle Realtime HR (Off)" Clicked="OnToggleRealtimeHrOffClicked" x:Name="ToggleHrOffButton" IsEnabled="False"/>
-            <Button Text="Sync Last 6 Hours HR" Clicked="OnSyncLast6HoursClicked" x:Name="Sync6HoursButton" IsEnabled="False"/>
-            <!--<Button Text="Abort Historical Sync" Clicked="OnAbortHistoricalSyncClicked" x:Name="AbortHistoricalButton" IsEnabled="False"/>-->
+            <Button Text="Sync history" Clicked="OnSyncHistoryClicked" x:Name="SyncButton" IsEnabled="False"/>
+            <Button Text="Abort History Sync" Clicked="OnAbortHistoricalClicked" x:Name="AbortHistoricalButton" IsEnabled="False"/>
             <Button Text="Disconnect" Clicked="OnDisconnectClicked" x:Name="DisconnectButton" IsEnabled="False"/>
+            <Button Text="Reboot strap" Clicked="OnResetClicked" x:Name="ResetButton" />
             <lvc:CartesianChart
+                IsVisible="False"
                 HeightRequest="300"
                 ZoomMode="Both"
                 BackgroundColor="White"

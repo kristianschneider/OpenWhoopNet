@@ -74,6 +74,7 @@
         BleSystemInitialized = 45,
         RawDataCollectionOn = 46,
         RawDataCollectionOff = 47,
+        Rebooting = 48, //Guessing as this is seen when reboot commands are sent
         StrapDrivenAlarmSet = 56,
         StrapDrivenAlarmExecuted = 57,
         AppDrivenAlarmExecuted = 58,
