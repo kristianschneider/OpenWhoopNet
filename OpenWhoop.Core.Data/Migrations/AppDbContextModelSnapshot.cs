@@ -115,7 +115,7 @@ namespace OpenWhoop.Core.Data.Migrations
                     b.Property<int?>("ActivityId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
+                    b.Property<DateTime>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
                         .HasDefaultValueSql("datetime('now', 'utc')");
@@ -127,7 +127,7 @@ namespace OpenWhoop.Core.Data.Migrations
                     b.Property<int?>("SleepCycleId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset>("Timestamp")
+                    b.Property<DateTime>("TimestampUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Value")
@@ -139,7 +139,7 @@ namespace OpenWhoop.Core.Data.Migrations
 
                     b.HasIndex("SleepCycleId");
 
-                    b.HasIndex("Timestamp");
+                    b.HasIndex("TimestampUtc");
 
                     b.ToTable("HeartRateSamples");
                 });

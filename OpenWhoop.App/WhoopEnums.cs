@@ -87,7 +87,6 @@
         HapticsTerminated = 100,
     }
 
-    // From Rust: pub enum CommandNumber
     public enum CommandNumber : byte
     {
         LinkValid = 1,

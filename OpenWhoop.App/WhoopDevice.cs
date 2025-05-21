@@ -226,7 +226,18 @@ public class WhoopDevice : IDisposable
         if (ParsedWhoopPacket.TryParse(args.Characteristic.Value, out var parsedPacket))
         {
             // Successfully parsed and CRCs are valid
-            //Console.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Length}");
+            //if (parsedPacket.PacketType == PacketType.CommandResponse)
+            //{
+            //    Console.WriteLine($"Type={parsedPacket.PacketType}, Cmd/Evt={(CommandNumber)parsedPacket.CommandOrEventNumber}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Length}");
+            //}
+            //else if (parsedPacket.PacketType == PacketType.Event)
+            //{
+            //    Console.WriteLine($"Type={parsedPacket.PacketType}, Cmd/Evt={(EventNumber)parsedPacket.CommandOrEventNumber}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Length}");
+            //}
+            //else
+            //{
+            //    Console.WriteLine($"Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Length}");
+            //}
             //Debug.WriteLine($"[WhoopDevice PARSED OK {characteristicName}]: Type={parsedPacket.PacketType}, Cmd/Evt={parsedPacket.CommandOrEventNumber:X2}, Seq={parsedPacket.Sequence:X2}, PayloadLen={parsedPacket.Payload.Length}");
             raiseEvent?.Invoke(parsedPacket);
         }

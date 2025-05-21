@@ -1,11 +1,6 @@
-﻿using Microsoft.Maui.Controls;
-using Microsoft.Maui.ApplicationModel;
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.IO;
-using System.IO.Pipes;
-using System.Threading.Tasks;
 using OpenWhoop.Core.Data;
 using Plugin.BLE.Abstractions.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -14,13 +9,11 @@ using System.Linq;
 using System.Text;
 using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
-using LiveChartsCore.SkiaSharpView.Drawing.Geometries;
 using OpenWhoop.App.Protocol;
 using OpenWhoop.Core.Entities;
-using Microsoft.Extensions.DependencyInjection;
 using OpenWhoop.App.Services;
 
-namespace OpenWhoop.MauiApp
+namespace OpenWhoop.MauiApp.Pages
 {
     public partial class MainPage : ContentPage
     {
@@ -30,9 +23,8 @@ namespace OpenWhoop.MauiApp
         private WhoopDevice? _connectedWhoopDevice;
         private DbService _dbService;
         private AppDbContext _dbContext;
-        private const int HeartRateBatchSize = 500;
+        private const int HeartRateBatchSize = 50;
         private readonly List<HeartRateSample> _hrSampleBuffer = new();
-
         private string _consoleOutput = string.Empty;
         public string ConsoleOutput
         {
@@ -46,7 +38,6 @@ namespace OpenWhoop.MauiApp
                 }
             }
         }
-
         public ISeries[] Series { get; set; } = [
             new LineSeries<double>
             {
@@ -55,6 +46,7 @@ namespace OpenWhoop.MauiApp
                 GeometrySize = 5
             }
         ];
+
         public MainPage(DbService dbService)
         {
             InitializeComponent();
@@ -67,20 +59,36 @@ namespace OpenWhoop.MauiApp
 
         }
 
-        private void SetBatteryLevel(int percent)
+        private async void OnMainPageDisappearing(object? sender, EventArgs e)
         {
-            percent = Math.Clamp(percent, 0, 100);
-            double fillWidth = 40 * percent / 100.0;
-            BatteryFill.WidthRequest = fillWidth;
-            BatteryLabel.Text = $"{percent}%";
-            if (percent > 50)
-                BatteryFill.Color = Colors.LimeGreen;
-            else if (percent > 20)
-                BatteryFill.Color = Colors.Gold;
-            else
-                BatteryFill.Color = Colors.Red;
+            LogToConsole("MainPage disappearing. Cleaning up resources.");
+            if (_connectedWhoopDevice != null)
+            {
+                await DisconnectCurrentDevice();
+                _connectedWhoopDevice = null;
+            }
+            if (_btService != null)
+            {
+                await _btService.StopScanAsync();
+                _btService.Dispose();
+                _btService = null;
+            }
+            await DisconnectCurrentDevice();
         }
-
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+            await TryReconnectSavedDeviceAsync();
+        }
+        private bool IsDeviceConnectedAndReady()
+        {
+            if (_connectedWhoopDevice == null || _connectedWhoopDevice.State != Plugin.BLE.Abstractions.DeviceState.Connected)
+            {
+                LogToConsole("Device not connected or not ready.");
+                return false;
+            }
+            return true;
+        }
         private async void OnScanClicked(object sender, EventArgs e)
         {
             LogToConsole("Scan button clicked.");
@@ -196,6 +204,7 @@ namespace OpenWhoop.MauiApp
         }
         private void UpdateCommandButtonsState(bool isEnabled)
         {
+            GetClockButton.IsEnabled = isEnabled;
             ToggleHrOnButton.IsEnabled = isEnabled;
             ToggleHrOffButton.IsEnabled = isEnabled;
             AbortHistoricalButton.IsEnabled = isEnabled;
@@ -204,7 +213,14 @@ namespace OpenWhoop.MauiApp
             ResetButton.IsEnabled = isEnabled;
 
         }
-
+        private async void OnGetClockClicked(object sender, EventArgs e)
+        {
+            if (!IsDeviceConnectedAndReady()) return;
+            LogToConsole("Sending GetClock command...");
+            var cmd = WhoopPacketBuilder.GetClock();
+            bool sent = await _connectedWhoopDevice.SendCommandAsync(cmd);
+            LogToConsole(sent ? "GetClock command sent." : "Failed to send GetClock command.");
+        }
         private async void OnResetClicked(object sender, EventArgs e)
         {
             if (!IsDeviceConnectedAndReady()) return;
@@ -232,15 +248,13 @@ namespace OpenWhoop.MauiApp
         private async void OnSyncHistoryClicked(object sender, EventArgs e)
         {
             if (!IsDeviceConnectedAndReady()) return;
-         
-            LogToConsole("Sending SendHistoricalData(start: true) command...");
-            var cmd = WhoopPacketBuilder.SendHistoricalData(true);
-            bool syncStarted = await _connectedWhoopDevice.SendCommandAsync(cmd);
 
+            LogToConsole("Sending SendHistoricalData(start: true) command...");
+            bool syncStarted = await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.SendHistoricalData());
             if (syncStarted)
             {
                 LogToConsole("SendHistoricalData(true) command sent. Sync active.");
-                StatusLabel.Text = "Status: Syncing last 6hrs HR...";
+                StatusLabel.Text = "Status: Syncing history...";
             }
             else
             {
@@ -276,15 +290,6 @@ namespace OpenWhoop.MauiApp
         {
             await DisconnectCurrentDevice();
         }
-        private bool IsDeviceConnectedAndReady()
-        {
-            if (_connectedWhoopDevice == null || _connectedWhoopDevice.State != Plugin.BLE.Abstractions.DeviceState.Connected)
-            {
-                LogToConsole("Device not connected or not ready.");
-                return false;
-            }
-            return true;
-        }
         private async void OnDataFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]
         {
             //LogToConsole($"[MainPage DATA_FROM_STRAP RAW]: {BitConverter.ToString(packet.RawData)} (Valid: {packet.IsValid}, Error: {packet.Error})");
@@ -312,94 +317,80 @@ namespace OpenWhoop.MauiApp
 
                     break;
                 case PacketType.Metadata:
-                    switch (packet.CommandOrEventNumber)
-                    {
-                        case (byte)MetadataType.HistoryStart:
-                            break;
-                        case (byte)MetadataType.HistoryEnd:
-                            break;
-                        case (byte)MetadataType.HistoryComplete:
-                            break;
-                    }
+                    await HandleHistoricalMetaData(packet);
                     break;
                 case PacketType.ConsoleLogs:
-                    LogToConsole("------------CL: " + Encoding.ASCII.GetString(packet.Payload));
+                    //LogToConsole("------------CL: " + Encoding.ASCII.GetString(packet.Payload));
                     break;
                 case PacketType.HistoricalData:
-                   // LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Length}");
-
-                    var payload = packet.Payload;
-                    int offset = 0;
-
-                    while (offset + 24 <= payload.Length) // 4+4+6+1+1+8+4 = 28, but only 24 are required for minimum valid packet
-                    {
-                        // 1. Skip 4 bytes
-                        offset += 4;
-
-                        // 2. Read 4 bytes unix timestamp (little-endian)
-                        uint unix = BitConverter.ToUInt32(payload, offset);
-                        offset += 4;
-
-                        // 3. Skip 6 bytes
-                        offset += 6;
-
-                        // 4. Read 1 byte bpm
-                        byte bpm = payload[offset];
-                        offset += 1;
-
-                        // 5. Read 1 byte rr_count
-                        byte rr_count = payload[offset];
-                        offset += 1;
-
-                        // 6. Read up to 4 RR intervals (2 bytes each, little-endian)
-                        var rr = new List<ushort>();
-                        for (int i = 0; i < 4; i++)
-                        {
-                            ushort rrValue = BitConverter.ToUInt16(payload, offset);
-                            offset += 2;
-                            if (rrValue != 0)
-                                rr.Add(rrValue);
-                        }
-                        if (rr.Count != rr_count)
-                        {
-                          //  LogToConsole($"RR count mismatch: expected {rr_count}, got {rr.Count}. Skipping sample.");
-                            // Optionally skip this sample or continue
-                            continue;
-                        }
-
-                        // 7. Read 4 bytes activity ID (little-endian)
-                        uint activity = BitConverter.ToUInt32(payload, offset);
-                        offset += 4;
-
-                        // Save to DB
-                        var timestamp = DateTimeOffset.FromUnixTimeSeconds(unix);
-                        var hrSample = new HeartRateSample
-                        {
-                            Timestamp = timestamp,
-                            Value = bpm,
-                            CreatedAt = DateTimeOffset.UtcNow,
-                            ActivityId = (int)activity,
-                            RrIntervals = rr
-                        };
-                        _hrSampleBuffer.Add(hrSample);
-                        if (_hrSampleBuffer.Count >= HeartRateBatchSize)
-                        {
-                            await SaveHeartRateSamplesInBuffer();
-                        }
-
-                        LogToConsole($"Saved HR sample: {bpm} bpm at {timestamp:yyyy-MM-dd HH:mm:ss} UTC, activity: {activity}, RR count: {rr.Count}");
-                    }
-
-
+                    LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Length}");
+                    await HandleHistoricalData(packet);
                     break;
             }
         }
 
-        private async Task SaveHeartRateSamplesInBuffer()
+        private async Task HandleHistoricalData(ParsedWhoopPacket packet)
         {
-            _dbContext.HeartRateSamples.AddRange(_hrSampleBuffer);
-            await _dbContext.SaveChangesAsync();
-            _hrSampleBuffer.Clear();
+            var payload = packet.Payload;
+            int offset = 0;
+
+            while (offset + 24 <= payload.Length) // 4+4+6+1+1+8+4 = 28, but only 24 are required for minimum valid packet
+            {
+                // 1. Skip 4 bytes
+                offset += 4;
+
+                // 2. Read 4 bytes unix timestamp (little-endian)
+                uint unix = BitConverter.ToUInt32(payload, offset);
+                offset += 4;
+
+                // 3. Skip 6 bytes
+                offset += 6;
+
+                // 4. Read 1 byte bpm
+                byte bpm = payload[offset];
+                offset += 1;
+
+                // 5. Read 1 byte rr_count
+                byte rr_count = payload[offset];
+                offset += 1;
+
+                // 6. Read up to 4 RR intervals (2 bytes each, little-endian)
+                var rr = new List<ushort>();
+                for (int i = 0; i < 4; i++)
+                {
+                    ushort rrValue = BitConverter.ToUInt16(payload, offset);
+                    offset += 2;
+                    if (rrValue != 0)
+                        rr.Add(rrValue);
+                }
+                if (rr.Count != rr_count)
+                {
+                    //  LogToConsole($"RR count mismatch: expected {rr_count}, got {rr.Count}. Skipping sample.");
+                    // Optionally skip this sample or continue
+                    continue;
+                }
+
+                // 7. Read 4 bytes activity ID (little-endian)
+                uint activity = BitConverter.ToUInt32(payload, offset);
+                offset += 4;
+
+                // Save to DB
+                var timestamp = DateTimeOffset.FromUnixTimeSeconds(unix);
+                var hrSample = new HeartRateSample
+                {
+                    TimestampUtc = timestamp.UtcDateTime,
+                    Value = bpm,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    ActivityId = (int)activity,
+                    RrIntervals = rr
+                };
+                _hrSampleBuffer.Add(hrSample);
+                if (_hrSampleBuffer.Count >= HeartRateBatchSize)
+                {
+                    await SaveHeartRateSamplesInBuffer();
+                }
+
+            }
         }
 
         private void OnEventsFromStrapReceivedHandler(object sender, ParsedWhoopPacket packet) // Changed from byte[]
@@ -436,7 +427,10 @@ namespace OpenWhoop.MauiApp
                         }
                         break;
                     case EventNumber.DoubleTap:
-                        LogToConsole("--- !!! Received DoubleTap event from strap! ---");
+                        LogToConsole("!!! Received DoubleTap event from strap! ---");
+                        break;
+                    case EventNumber.Error:
+                        LogToConsole("!!! An error occured! ---");
                         break;
                 }
             }
@@ -454,7 +448,7 @@ namespace OpenWhoop.MauiApp
                 return;
             }
 
-            LogToConsole($"[MainPage CMD_FROM_STRAP]: Type={packet.PacketType}, OrigCmd={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Length}");
+            // LogToConsole($"[MainPage CMD_FROM_STRAP]: Type={packet.PacketType}, OrigCmd={packet.CommandOrEventNumber:X2}, Seq={packet.Sequence:X2}, PayloadLen={packet.Payload.Length}");
 
             if (packet.PacketType == PacketType.CommandResponse)
             {
@@ -463,14 +457,13 @@ namespace OpenWhoop.MauiApp
 
                 switch (originalCommand)
                 {
+                    case CommandNumber.HistoricalDataResult:
+                        await HandleHistoricalData(packet);
+                        break;
                     case CommandNumber.GetBatteryLevel:
                         if (packet.Payload.Length >= 1)
                         {
                             byte batteryLevel = packet.Payload[2];
-                            if (batteryLevel > 100)
-                            {
-                                batteryLevel = (byte)(batteryLevel - 100);
-                            }
                             LogToConsole($"Battery Level (from CommandResponse): {batteryLevel}%");
                             MainThread.BeginInvokeOnMainThread(async () => { SetBatteryLevel(batteryLevel); });
                         }
@@ -481,6 +474,30 @@ namespace OpenWhoop.MauiApp
                         break;
                     case CommandNumber.AbortHistoricalTransmits:
                         await SaveHeartRateSamplesInBuffer();
+                        break;
+                    case CommandNumber.GetClock:
+                        if (packet.Payload.Length >= 1)
+                        {
+                            var payload = BitConverter.ToString(packet.Payload);
+                            uint unixTime = BitConverter.ToUInt32(packet.Payload, 2);
+                            DateTime utcDateTime = DateTimeOffset.FromUnixTimeSeconds(unixTime).UtcDateTime;
+                            LogToConsole($"Clock on strap: {utcDateTime:u}");
+                        }
+                        else
+                        {
+                            LogToConsole("GetBatteryLevel CommandResponse packet has insufficient payload length.");
+                        }
+                        break;
+                    case CommandNumber.SendHistoricalData:
+                        if (packet.Payload.Length >= 1)
+                        {
+                            var payload = packet.Payload;
+
+                        }
+                        else
+                        {
+                            LogToConsole("CommandResponse packet has insufficient payload length.");
+                        }
                         break;
                 }
             }
@@ -497,7 +514,6 @@ namespace OpenWhoop.MauiApp
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
                     StatusLabel.Text = $"Status: {disconnectedDevice.Name} disconnected.";
-                    await DisplayAlert("Disconnected", $"Device {disconnectedDevice.Name} has disconnected.", "OK");
                     if (_connectedWhoopDevice?.Id == disconnectedDevice.Id)
                     {
                         // No need to re-dispose or re-unsubscribe here, DisconnectCurrentDevice or OnMainPageDisappearing handles it
@@ -506,26 +522,48 @@ namespace OpenWhoop.MauiApp
                 });
             }
         }
+        private async Task HandleHistoricalMetaData(ParsedWhoopPacket packet)
+        {
+            //CREATE METADATA
+            var cmd = packet.CommandOrEventNumber;
+            int metaoffset = 0;
+            uint metaunix = BitConverter.ToUInt32(packet.Payload, metaoffset);
+            metaoffset += 4;
+            metaoffset += 6;
+            uint data = BitConverter.ToUInt32(packet.Payload, metaoffset);
+
+            var metadata = new HistoryMetadata(metaunix, data, (MetadataType)cmd);
+            Console.WriteLine($"Got Historical Metadata {metadata.Cmd} with {metadata.Data}");
+            var nextHistoryPacket = WhoopPacketBuilder.SendHistoryEnd(metadata.Data);
+            await _connectedWhoopDevice.SendCommandAsync(nextHistoryPacket);
+            Thread.Sleep(200);
+            await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.SendHistoricalData());
+        }
         private async Task DisconnectCurrentDevice()
         {
             if (_connectedWhoopDevice != null)
             {
-                await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.AbortHistoricalTransmits());
-                await Task.Delay(500); // Wait a moment to ensure the command is sent
-                await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.ExitHighFreqSync());
-                await Task.Delay(500); // Wait a moment to ensure the command is sent
+                try
+                {
+                    await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.AbortHistoricalTransmits());
+                    await Task.Delay(500); // Wait a moment to ensure the command is sent
+                    await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.ExitHighFreqSync());
+                    await Task.Delay(500); // Wait a moment to ensure the command is sent
 
-                LogToConsole($"Disconnecting from {_connectedWhoopDevice.Name}...");
-                StatusLabel.Text = $"Status: Disconnecting from {_connectedWhoopDevice.Name}...";
-                _connectedWhoopDevice.DataFromStrapReceived -= OnDataFromStrapReceivedHandler;
-                _connectedWhoopDevice.CmdFromStrapReceived -= OnCmdFromStrapReceivedHandler;
-                _connectedWhoopDevice.EventsFromStrapReceived -= OnEventsFromStrapReceivedHandler;
-                await _connectedWhoopDevice.DisconnectAsync();
-                _connectedWhoopDevice.Dispose(); // Call dispose after disconnect attempt
-                _connectedWhoopDevice = null;
-                await SaveHeartRateSamplesInBuffer();
-                LogToConsole("Disconnected.");
-                StatusLabel.Text = "Status: Disconnected. Scan for devices.";
+                    LogToConsole($"Disconnecting from {_connectedWhoopDevice.Name}...");
+                    StatusLabel.Text = $"Status: Disconnecting from {_connectedWhoopDevice.Name}...";
+                    _connectedWhoopDevice.DataFromStrapReceived -= OnDataFromStrapReceivedHandler;
+                    _connectedWhoopDevice.CmdFromStrapReceived -= OnCmdFromStrapReceivedHandler;
+                    _connectedWhoopDevice.EventsFromStrapReceived -= OnEventsFromStrapReceivedHandler;
+                    await _connectedWhoopDevice.DisconnectAsync();
+                    await SaveHeartRateSamplesInBuffer();
+                    LogToConsole("Disconnected.");
+                    StatusLabel.Text = "Status: Disconnected. Scan for devices.";
+                }
+                catch (Exception e)
+                {
+                    LogToConsole(e.Message);
+                }
             }
         }
         public async Task<bool> CheckAndRequestBluetoothPermissions()
@@ -559,34 +597,6 @@ namespace OpenWhoop.MauiApp
             });
             Debug.WriteLine(message);
         }
-        private async void OnMainPageDisappearing(object? sender, EventArgs e)
-        {
-            LogToConsole("MainPage disappearing. Cleaning up resources.");
-            if (_connectedWhoopDevice != null)
-            {
-                await DisconnectCurrentDevice();
-                _connectedWhoopDevice = null;
-            }
-            if (_btService != null)
-            {
-                await _btService.StopScanAsync();
-                _btService.Dispose();
-                _btService = null;
-            }
-            await DisconnectCurrentDevice();
-            if (_dbContext != null)
-            {
-                await _dbContext.DisposeAsync();
-                _dbContext = null;
-            }
-        }
-
-        protected override async void OnAppearing()
-        {
-            base.OnAppearing();
-            await TryReconnectSavedDeviceAsync();
-        }
-
         private async Task TryReconnectSavedDeviceAsync()
         {
             try
@@ -624,6 +634,7 @@ namespace OpenWhoop.MauiApp
                     {
                         LogToConsole($"Reconnected to {saved.DeviceName}. Ready for commands.");
                         UpdateCommandButtonsState(true);
+                        Thread.Sleep(100);
                         await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.GetBatteryLevel());
                     }
                     else
@@ -638,6 +649,29 @@ namespace OpenWhoop.MauiApp
                 LogToConsole($"Error during auto-reconnect: {ex.Message}");
                 ScanButton.IsVisible = true;
             }
+        }
+        private async Task SaveHeartRateSamplesInBuffer()
+        {
+            LogToConsole($"Saved HR samples: {_hrSampleBuffer.Count}");
+            if (_hrSampleBuffer.Count > 0)
+            {
+                _dbContext.HeartRateSamples.AddRange(_hrSampleBuffer);
+                await _dbContext.SaveChangesAsync();
+                _hrSampleBuffer.Clear();
+            }
+        }
+        private void SetBatteryLevel(int percent)
+        {
+            percent = Math.Clamp(percent, 0, 100);
+            double fillWidth = 40 * percent / 100.0;
+            BatteryFill.WidthRequest = fillWidth;
+            BatteryLabel.Text = $"{percent}%";
+            if (percent > 50)
+                BatteryFill.Color = Colors.LimeGreen;
+            else if (percent > 20)
+                BatteryFill.Color = Colors.Gold;
+            else
+                BatteryFill.Color = Colors.Red;
         }
     }
 }

@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             x:Class="OpenWhoop.MauiApp.MainPage"
+             x:Class="OpenWhoop.MauiApp.Pages.MainPage"
              Title="OpenWhoop"
              NavigationPage.HasNavigationBar="False"
              xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.Maui;assembly=LiveChartsCore.SkiaSharpView.Maui"
@@ -56,6 +56,7 @@
         <VerticalStackLayout Grid.Row="3" Spacing="5" Margin="0,0,0,10">
             <Label Text="Device Commands:" FontAttributes="Bold"/>
             <!--<Button Text="Get bat" Clicked="OnGetBatteryLevelClicked" x:Name="GetHello" IsEnabled="False"/>-->
+            <Button Text="Get Clock" Clicked="OnGetClockClicked" x:Name="GetClockButton" IsEnabled="False"/>
             <Button Text="Toggle Realtime HR (On)" Clicked="OnToggleRealtimeHrOnClicked" x:Name="ToggleHrOnButton" IsEnabled="False"/>
             <Button Text="Toggle Realtime HR (Off)" Clicked="OnToggleRealtimeHrOffClicked" x:Name="ToggleHrOffButton" IsEnabled="False"/>
             <Button Text="Sync history" Clicked="OnSyncHistoryClicked" x:Name="SyncButton" IsEnabled="False"/>

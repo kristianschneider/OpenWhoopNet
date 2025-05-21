@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace OpenWhoop.Core.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class InitialMigration : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -52,9 +52,10 @@ namespace OpenWhoop.Core.Data.Migrations
                         .Annotation("Sqlite:Autoincrement", true),
                     ActivityId = table.Column<int>(type: "INTEGER", nullable: true),
                     SleepCycleId = table.Column<int>(type: "INTEGER", nullable: true),
-                    Timestamp = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
+                    TimestampUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
                     Value = table.Column<int>(type: "INTEGER", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false, defaultValueSql: "datetime('now', 'utc')")
+                    CreatedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "datetime('now', 'utc')"),
+                    RrIntervals = table.Column<string>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -210,9 +211,9 @@ namespace OpenWhoop.Core.Data.Migrations
                 column: "SleepCycleId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_HeartRateSamples_Timestamp",
+                name: "IX_HeartRateSamples_TimestampUtc",
                 table: "HeartRateSamples",
-                column: "Timestamp");
+                column: "TimestampUtc");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Packets_Uuid",

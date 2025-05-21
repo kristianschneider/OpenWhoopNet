@@ -138,6 +138,15 @@ namespace OpenWhoop.App
             );
         }
 
+        public static byte[] GetClock()
+        {
+            return Build(
+                PacketType.Command,
+                0,
+            (byte)CommandNumber.GetClock,
+            [0x00]);
+        }
+
         public static byte[] ToggleRealtimeHr(bool enable)
         {
             byte[] payload = new byte[] { enable ? (byte)0x01 : (byte)0x00 };
@@ -161,24 +170,47 @@ namespace OpenWhoop.App
             return CreateCommandPacket(CommandNumber.SetClock, payload);
         }
 
-        public static byte[] SetReadPointer(uint pointerTimestamp)
-        {
-            // Assuming pointerTimestamp is a Unix timestamp (seconds since epoch)
-            // Payload is typically 4 bytes, little-endian
-            byte[] payload = BitConverter.GetBytes(pointerTimestamp);
-            if (!BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(payload); // Ensure little-endian
-            }
-            return CreateCommandPacket(CommandNumber.SetReadPointer, payload);
-        }
 
-        public static byte[] SendHistoricalData(bool start)
+        public static byte[] SendHistoricalData()
         {
             byte[] payload = new byte[] { 0x00 };
             return CreateCommandPacket(CommandNumber.SendHistoricalData, payload);
         }
 
+        public static byte[] SendHistoricalData(uint offset)
+        {
+            byte[] offsetBytes = BitConverter.GetBytes(offset);
+            if (!BitConverter.IsLittleEndian)
+            {
+                Array.Reverse(offsetBytes);
+            }
+            return CreateCommandPacket(CommandNumber.SendHistoricalData, offsetBytes);
+        }
+
+        public static byte[] SendHistoryEnd(UInt32 data)
+        {
+            // 1. Start with 0x01
+            var packetData = new List<byte> { 0x01 };
+
+            // 2. Add the 4 bytes of 'data' in little-endian order
+            byte[] dataBytes = BitConverter.GetBytes(data);
+            if (!BitConverter.IsLittleEndian)
+            {
+                Array.Reverse(dataBytes);
+            }
+            packetData.AddRange(dataBytes);
+
+            // 3. Add 4 bytes of zero padding
+            packetData.AddRange(new byte[4]);
+
+            // 4. Build the packet
+            return Build(
+                PacketType.Command,
+                0,
+                (byte)CommandNumber.HistoricalDataResult,
+                packetData.ToArray()
+            );
+        }
         public static byte[] AbortHistoricalTransmits()
         {
             return CreateCommandPacket(CommandNumber.AbortHistoricalTransmits);

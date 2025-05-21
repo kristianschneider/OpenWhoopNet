@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OpenWhoop.MauiApp.Pages.DataExplorerPage"
+             Title="Data Explorer">
+    <StackLayout Padding="10" Spacing="10">
+        <Label Text="Data Explorer" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center" />
+        <Label Text="Total Heart Rate Samples:" FontAttributes="Bold"/>
+        <Label x:Name="SampleCountLabel" Text="Loading..." />
+        <Label Text="Oldest Sample:" FontAttributes="Bold"/>
+        <Label x:Name="OldestLabel" Text="Loading..." />
+        <Label Text="Newest Sample:" FontAttributes="Bold"/>
+        <Label x:Name="NewestLabel" Text="Loading..." />
+        <CollectionView x:Name="HeartRateSamplesView" ItemsSource="{Binding HeartRateSamples}" HeightRequest="400">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Padding="5" ColumnDefinitions="*,*,*,*">
+                        <Label Text="{Binding TimestampUtc}" Grid.Column="0" FontSize="12"/>
+                        <Label Text="{Binding Value}" Grid.Column="1" FontSize="12"/>
+                        <Label Text="{Binding ActivityId}" Grid.Column="2" FontSize="12"/>
+                        <Label Text="{Binding RrIntervals.Count}" Grid.Column="3" FontSize="12"/>
+                    </Grid>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </StackLayout>
+</ContentPage>
