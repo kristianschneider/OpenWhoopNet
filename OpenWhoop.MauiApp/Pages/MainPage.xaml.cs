@@ -320,7 +320,7 @@ namespace OpenWhoop.MauiApp.Pages
                     await HandleHistoricalMetaData(packet);
                     break;
                 case PacketType.ConsoleLogs:
-                    LogToConsole("CL: " + Encoding.ASCII.GetString(packet.Payload));
+                    //LogToConsole("CL: " + Encoding.ASCII.GetString(packet.Payload));
                     break;
                 case PacketType.HistoricalData:
                     LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Length}");

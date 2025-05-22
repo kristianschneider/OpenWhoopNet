@@ -4,7 +4,7 @@
              x:Class="OpenWhoop.MauiApp.Pages.MainPage"
              Title="OpenWhoop"
              NavigationPage.HasNavigationBar="False"
-             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.Maui;assembly=LiveChartsCore.SkiaSharpView.Maui"
+             
              >
 
     <Grid RowDefinitions="Auto, Auto, Auto, Auto,  *, Auto" ColumnDefinitions="*" Padding="10">
@@ -63,13 +63,7 @@
             <Button Text="Abort History Sync" Clicked="OnAbortHistoricalClicked" x:Name="AbortHistoricalButton" IsEnabled="False"/>
             <Button Text="Disconnect" Clicked="OnDisconnectClicked" x:Name="DisconnectButton" IsEnabled="False"/>
             <Button Text="Reboot strap" Clicked="OnResetClicked" x:Name="ResetButton" />
-            <lvc:CartesianChart
-                IsVisible="False"
-                HeightRequest="300"
-                ZoomMode="Both"
-                BackgroundColor="White"
-                Series="{Binding Series}">
-            </lvc:CartesianChart>
+          
         </VerticalStackLayout>
         <ScrollView Grid.Row="4" Margin="0,10,0,0" Height="100">
             <Label Text="{Binding ConsoleOutput}" FontSize="Small" LineBreakMode="WordWrap"/>
