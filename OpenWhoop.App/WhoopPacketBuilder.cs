@@ -131,9 +131,9 @@ namespace OpenWhoop.App
         public static byte[] GetHelloHarvard()
         {
             return Build(
-                PacketType.Command, // Assuming your C# PacketType enum
+                PacketType.Command, 
                 0,
-                (byte)CommandNumber.GetHelloHarvard, // Assuming your C# CommandNumber enum
+                (byte)CommandNumber.GetHelloHarvard,
                 [0x00]
             );
         }
@@ -187,6 +187,7 @@ namespace OpenWhoop.App
             return CreateCommandPacket(CommandNumber.SendHistoricalData, offsetBytes);
         }
 
+     
         public static byte[] SendHistoryEnd(UInt32 data)
         {
             // 1. Start with 0x01
@@ -211,6 +212,7 @@ namespace OpenWhoop.App
                 packetData.ToArray()
             );
         }
+
         public static byte[] AbortHistoricalTransmits()
         {
             return CreateCommandPacket(CommandNumber.AbortHistoricalTransmits);
@@ -224,6 +226,42 @@ namespace OpenWhoop.App
                 (byte)CommandNumber.RebootStrap, // Assuming your C# CommandNumber enum
                 [0x00]
             );
+        }
+
+        public static byte[] SetTime()
+        {
+            uint currentTime = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            // Create payload: timestamp (4 bytes) + padding (5 bytes)
+            var data = new List<byte>();
+
+            // Add the Unix timestamp in little-endian order
+            byte[] timeBytes = BitConverter.GetBytes(currentTime);
+            if (!BitConverter.IsLittleEndian)
+            {
+                Array.Reverse(timeBytes);
+            }
+            data.AddRange(timeBytes);
+
+            // Add 5 bytes of padding (zeros)
+            data.AddRange(new byte[5]);
+
+            // Build the packet with Command type, sequence 0, SetClock command number
+            return Build(
+                PacketType.Command,
+                0,
+                (byte)CommandNumber.SetClock,
+                data.ToArray()
+            );
+        }
+
+        public static byte[] GetName()
+        {
+            return Build(
+                PacketType.Command,
+                0,
+                (byte)CommandNumber.GetAdvertisingNameHarvard,
+                [0x00]);
         }
     }
 }

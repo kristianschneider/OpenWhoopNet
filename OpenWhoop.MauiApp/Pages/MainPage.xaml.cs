@@ -320,7 +320,7 @@ namespace OpenWhoop.MauiApp.Pages
                     await HandleHistoricalMetaData(packet);
                     break;
                 case PacketType.ConsoleLogs:
-                    //LogToConsole("------------CL: " + Encoding.ASCII.GetString(packet.Payload));
+                    LogToConsole("CL: " + Encoding.ASCII.GetString(packet.Payload));
                     break;
                 case PacketType.HistoricalData:
                     LogToConsole($"[MainPage DATA_FROM_STRAP] Received HistoricalData packet! PayloadLen={packet.Payload.Length}");
@@ -430,7 +430,7 @@ namespace OpenWhoop.MauiApp.Pages
                         LogToConsole("!!! Received DoubleTap event from strap! ---");
                         break;
                     case EventNumber.Error:
-                        LogToConsole("!!! An error occured! ---");
+                        LogToConsole($"!!! whoop reported An error {Encoding.ASCII.GetString(packet.Payload)}");
                         break;
                 }
             }
@@ -534,10 +534,20 @@ namespace OpenWhoop.MauiApp.Pages
 
             var metadata = new HistoryMetadata(metaunix, data, (MetadataType)cmd);
             Console.WriteLine($"Got Historical Metadata {metadata.Cmd} with {metadata.Data}");
-            var nextHistoryPacket = WhoopPacketBuilder.SendHistoryEnd(metadata.Data);
-            await _connectedWhoopDevice.SendCommandAsync(nextHistoryPacket);
-            Thread.Sleep(200);
-            await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.SendHistoricalData());
+            if (metadata.Cmd == MetadataType.HistoryEnd)
+            {
+                var nextHistoryPacket = WhoopPacketBuilder.SendHistoryEnd(metadata.Data);
+                await _connectedWhoopDevice.SendCommandAsync(nextHistoryPacket);
+            }
+
+            //if (metadata.Cmd == MetadataType.HistoryStart)
+            //{
+            //    var nextHistoryPacket = WhoopPacketBuilder.SendHistoricalData();
+            //    await _connectedWhoopDevice.SendCommandAsync(nextHistoryPacket);
+            //}
+            
+            //Thread.Sleep(200);
+            //await _connectedWhoopDevice.SendCommandAsync(WhoopPacketBuilder.SendHistoricalData());
         }
         private async Task DisconnectCurrentDevice()
         {

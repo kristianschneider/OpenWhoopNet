@@ -190,8 +190,10 @@ public class WhoopDevice : IDisposable
             await SubscribeToCharacteristic(_memfaultCharacteristicGuid, OnMemFaultFromStrapValueUpdated, "MF_FROM_STRAP", cancellationToken);
 
             // --- Add EnterHighFreqSync command ---
-            Debug.WriteLine("[WhoopDevice] Sending EnterHighFreqSync command...");
-
+            Debug.WriteLine("[WhoopDevice] Sending start commands...");
+            await SendCommandAsync(WhoopPacketBuilder.GetHelloHarvard(), cancellationToken);
+            await SendCommandAsync(WhoopPacketBuilder.SetTime(), cancellationToken);
+            await SendCommandAsync(WhoopPacketBuilder.GetName(), cancellationToken);
             bool sentHighFreqSync = await SendCommandAsync(WhoopPacketBuilder.EnterHighFreqSync(), cancellationToken);
             if (sentHighFreqSync)
             {
@@ -329,6 +331,7 @@ public class WhoopDevice : IDisposable
 
             Console.WriteLine("----------Sending  " + string.Join(",", commandData.Select(b => b.ToString())));
             bool success = await _cmdToStrapCharacteristic.WriteAsync(commandData, cancellationToken) == 0;
+            Thread.Sleep(50);
             if (!success)
             {
                 Console.WriteLine("[WhoopDevice] Failed to send command (WriteAsync returned false).");
